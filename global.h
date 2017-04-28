@@ -4,8 +4,9 @@
 #define TRUE 1
 #define FALSE 0
 
-#define GATEWAY_ADDRESS "aaa"
-#define GATEWAY_PORT 3000
+//#define GATEWAY_ADDRESS "aaa"
+#define GATEWAY_PORT_CLIENTS 3000
+#define GATEWAY_PORT_PEERS 4000
 
 #define MAX_MSG_LEN 100
 
