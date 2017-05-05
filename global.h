@@ -16,5 +16,27 @@ typedef struct message_gw{
 	int port;
 } GatewayMsg;
 
+
+void checkError(int var, char * description){
+	if(var == -1) {
+		perror(description);
+		exit(-1);
+	}
+}
+
+char * serialize(GatewayMsg * msg){
+	char * buffer;
+	buffer = malloc(sizeof(GatewayMsg));
+	memcpy(buffer, msg, sizeof(GatewayMsg));
+	return buffer;
+}
+
+GatewayMsg * deserialize(char * buffer){
+	GatewayMsg * msg;
+	msg = malloc(sizeof(GatewayMsg));
+	memcpy(msg, buffer, sizeof(GatewayMsg));
+	return msg;
+}
+
 #endif
 

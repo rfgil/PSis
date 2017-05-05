@@ -43,28 +43,6 @@ void interruptionHandler(){
 	isInterrupted = TRUE;
 }
 	
-void checkError(int var, char * description){
-	if(var == -1) {
-		perror(description);
-		exit(-1);
-	}
-}
-
-char * serialize(GatewayMsg * msg){
-	char * buffer;
-	buffer = malloc(sizeof(GatewayMsg));
-	memcpy(buffer, msg, sizeof(GatewayMsg));
-	return buffer;
-}
-
-GatewayMsg * deserialize(char * buffer){
-	GatewayMsg * msg;
-	msg = malloc(sizeof(GatewayMsg));
-	memcpy(msg, buffer, sizeof(GatewayMsg));
-	return msg;
-}
-
-
 void * waitPeer(void * arg){
 	struct sockaddr_in peer_addr;
 	char * buffer;
@@ -154,7 +132,8 @@ void * waitClient(void * arg){
 			pthread_exit(0);
 		}
 		
-		msg = deserialize(in_buffer);
+		//msg = deserialize(in_buffer); // A mensagem enviada pelo cliente é irrelevante
+		msg = malloc(sizeof(GatewayMsg));
 
 		
 		if (peerList != NULL) { // Confirma se a lista de servidores não está vazia

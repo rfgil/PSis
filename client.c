@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 
+#include "api.h"
+
 void checkError(int var, char * description){
 	if(var == -1) {
 		perror(description);
@@ -13,24 +15,36 @@ void checkError(int var, char * description){
 	}
 }
 
-int main(){
-	int sock_fd_clientudp, sock_fd_clienttcp, err;
+int main(int argc, char *argv[]){
+	int fd_udp, fd_tcp, err;
+	struct sockaddr_in gateway_addr;
+	char * buffer;
+	GatewayMsg * msg;
 
-	//INICIALIZA SOCKET CLIENT UDP
-	sock_fd_clientudp = socket(AF_INET, SOCK_DGRAM, 0);
-	checkError(sock_fd_clientudp, "socket");	
+	// INICIALIZA SOCKET CLIENT UDP
+	fd_udp = socket(AF_INET, SOCK_DGRAM, 0);
+	checkError(fd_udp, "socket");
+	
+		
+	local_addr.sin_family = AF_INET; // Definições da socket UDP
+	local_addr.sin_port = htons(GATEWAY_PORT_CLIENTS);
+	local_addr.sin_addr.s_addr = INADDR_ANY;
+
+	buffer = malloc(sizeof(char));
+
+	// ENVIA PARA GATEWAY
+	sendto(fd_udp, buffer, 1, 0, (struct sockaddr *)&gateway_addr, sizeof(local_addr));
+	
+
+	
+	
+	
+
+	
 
 	//INICIALIZA SOCKET CLIENT TCP
 	sock_fd_clienttcp = socket(AF_INET, SOCK_DGRAM, 0); 
 	checkError(sock_fd_client, "socket");
-	
-
-	// Bind socket para clients UDP
-	local_addr.sin_family = AF_INET; // Definições da socket UDP
-	local_addr.sin_port= htons(GATEWAY_PORT_CLIENTS);
-	local_addr.sin_addr.s_addr= INADDR_ANY;	
-	err = bind(sock_fd_clientudp, (struct sockaddr *)&local_addr, sizeof(local_addr));
-	checkError(err, "bind");
 
 	// Bind socket para clientes TCP
 	local_addr.sin_family = AF_INET;
@@ -40,8 +54,7 @@ int main(){
 	checkError(err, "bind");
 
 
-	//ENVIA PARA GATEWAY
-	sendto(sock_fd_clientudp, buffer, sizeof(GatewayMsg), 0, (struct sockaddr *)&local_addr, sizeof(local_addr));
+
 	
 	//RECEBE DA GATEWAY
 	recv(sock_fd_clienttcp, buffer, sizeof(GatewayMsg), 0, (struct sockaddr *)&local_addr, sizeof(local_addr));
