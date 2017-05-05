@@ -1,23 +1,36 @@
-#include <string.h>
-
-#include <sys/socket.h>
-#include <sys/un.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <sys/types.h> 
+#include <string.h>
+
 #include <unistd.h>
 #include <arpa/inet.h>
 
-#include <pthread.h>
+#include <sys/types.h> 
+#include <sys/socket.h>
+#include <sys/un.h>
+
 #include <signal.h>
+#include <pthread.h>
+
+//#include <bits/sigaction.h> //???
 
 #include "global.h"
 #include "Estruturas/list.h"
 
 //WIRESHARK
 
+/*
+struct sigaction {
+   void     (*sa_handler)(int);
+   void     (*sa_sigaction)(int, siginfo_t *, void *);
+   sigset_t   sa_mask;
+   int        sa_flags;
+   void     (*sa_restorer)(void);
+};
+*/
+
 List * peerList;
-List * currentPeer;
+
 int isInterrupted = FALSE;
 
 typedef struct _peerInfo{
@@ -52,7 +65,7 @@ GatewayMsg * deserialize(char * buffer){
 }
 
 
-void waitPeer(void * arg){
+void * waitPeer(void * arg){
 	struct sockaddr_in peer_addr;
 	char * buffer;
 	GatewayMsg * msg;
@@ -61,6 +74,9 @@ void waitPeer(void * arg){
 	PeerInfo * peer;
 	
 	int isNew, size_addr, sock_fd;
+	
+	
+	buffer = malloc(MAX_MSG_LEN*sizeof(char));
 	
 	// O fd da socket é enviado como argumento para o thread
 	sock_fd = *((int*)arg);
@@ -74,7 +90,9 @@ void waitPeer(void * arg){
 		// Verifica se houve alguma interrupção
 		if (isInterrupted){
 			close(sock_fd);
-			exit(0);
+			free(buffer);
+			
+			pthread_exit(0);
 		}
 		
 		msg = deserialize(buffer);	
@@ -106,26 +124,73 @@ void waitPeer(void * arg){
 	}
 }
 
-void waitClient(void * arg){
+
+void * waitClient(void * arg){
+	struct sockaddr_in client_addr;
+	char * in_buffer, * out_buffer;
+	GatewayMsg * msg;
+	List * currentPeer;
+	int size_addr, sock_fd;
 	
+		
+	in_buffer = malloc(MAX_MSG_LEN*sizeof(char));
+	
+	// O fd da socket é enviado como argumento para o thread
+	sock_fd = *((int*)arg);
+	
+	// Apontador para a próximo peer da lista a ser enviado
+	currentPeer = NULL;
+	
+	while(1){ // O cliente procura um servidor disponivel
+		// Aguarda mensagem de um cliente
+		size_addr = sizeof(client_addr);
+		recvfrom(sock_fd, in_buffer, MAX_MSG_LEN, 0, (struct sockaddr *)&client_addr, (socklen_t *)&size_addr);
+		
+		// Verifica se houve alguma interrupção (recvfrom é interrompido nesse caso)
+		if (isInterrupted){
+			close(sock_fd);
+			free(in_buffer);
+			
+			pthread_exit(0);
+		}
+		
+		msg = deserialize(in_buffer);
+
+		
+		if (peerList != NULL) { // Confirma se a lista de servidores não está vazia
+			if (currentPeer == NULL){ // Permite regressar ao inicio da lista de servidores (implementa o round-robin)
+				currentPeer = peerList;
+			}
+			
+			// Define mensagem a enviar
+			msg->type = TRUE; // Significa que há um peer disponivel
+			strcpy(msg->address, ((PeerInfo *) currentPeer->item)->address);
+			msg->port = ((PeerInfo *)currentPeer->item)->port;
+			
+			currentPeer = currentPeer->next; // Avança na lista para o próximo peer
+			
+		} else { // não há nenhum peer disponivel
+			
+			msg->type = FALSE; // Significa que NÃO há um peer disponivel
+		}
+		
+		out_buffer = serialize(msg);
+		sendto(sock_fd, out_buffer, sizeof(GatewayMsg), 0, (struct sockaddr *)&client_addr, sizeof(client_addr));
+		free(out_buffer);
+		
+		free(msg);
+	}
 }
 
-
-void handleServidor(GatewayMsg * msg, List ** serverList){
-	//List * aux;
-	//GatewayMsg * listedServer;
-	
-
-}
 
 int main(){
+	struct sigaction sa;
 	struct sockaddr_in local_addr;
 	int sock_fd_client, sock_fd_peer, err;
 	
 	pthread_t client_thread, peer_thread;
 	
-	struct sigaction sigHandler;
-		
+			
 	sock_fd_client = socket(AF_INET, SOCK_DGRAM, 0); // SOCK_DGRAM -> UDP | SOCK_STREAM -> TCP
 	sock_fd_peer = socket(AF_INET, SOCK_DGRAM, 0); // SOCK_DGRAM -> UDP | SOCK_STREAM -> TCP
 	checkError(sock_fd_client, "socket");
@@ -149,11 +214,11 @@ int main(){
 	
 	// Iniciliza lista
 	peerList = newList();
-	currentPeer = NULL;
 	
 	// Define handle para interrupções
-	sigHandler.sa_handler = interruptionHandler;
-	sigaction(SIGINT, &sigHandler, NULL);
+	memset (&sa, 0, sizeof(sa));
+	sa.sa_handler = interruptionHandler;
+	sigaction(SIGINT, &sa, NULL);
 	
 	// Cria threads
 	pthread_create(&client_thread, NULL, waitClient, &sock_fd_client);
@@ -162,43 +227,6 @@ int main(){
 	// Espera que todos os threads terminem
 	pthread_join(client_thread, NULL);
 	pthread_join(peer_thread, NULL);
-	
-	return 0;
-	
-	/*
-	while(1){
-		
-		
-		msg = deserialize(buffer);
-		
-		if (msg->type == 0){        // Cliente
-			if (serverList != NULL) {
-				if (currentServer == NULL){ // Permite regressar ao inicio da lista de servidores
-					currentServer = serverList;
-				}
-				
-				buffer = serialize(currentServer->item);
-				sendto(sock_fd, buffer, sizeof(GatewayMsg), 0, (struct sockaddr *)&client_addr, sizeof(client_addr));
-				free(buffer);
-				
-				currentServer = currentServer->next;
-			} else {
-				// A mensagem recebida é do tipo 0 (foi um cliente que a enviou para a gateway).
-				// Se não houver nenhum servidor na lista pode ser enviada a mesma mensagem com type=0,
-				// que significa (para o cliente) que não há um servidor disponivel
-				//
-				sendto(sock_fd, buffer, sizeof(GatewayMsg), 0, (struct sockaddr *)&client_addr, sizeof(client_addr));
-			}
-			
-		} else if (msg->type == 1){ // Servidor
-			handleServidor(msg, &serverList);
-		}
-		
-		free(msg);
-	}
-	
-	close(sock_fd);
-	*/
 
 	return 0;
 }
