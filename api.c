@@ -51,7 +51,7 @@ int gallery_connect(char * host, in_port_t port){
 
 	// Envia e recebe mensagem da gateway
 	sendto(fd_udp, buffer, 1, 0, (struct sockaddr *)&gateway_addr, sizeof(gateway_addr)); // Envia 1 byte qualquer
-	isInterrupted = FALSE; // Um select não é melhor?
+	isInterrupted = FALSE; 
 	alarm(TIME_OUT);
 	recvfrom(fd_udp, buffer, sizeof(GatewayMsg), 0, (struct sockaddr *)&gateway_addr, (socklen_t *)&err);
 	if (isInterrupted == TRUE){
