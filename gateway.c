@@ -61,7 +61,6 @@ void * waitPeer(void * arg){
 	
 	while(1){
 		isNew = TRUE; // Assume-se que se receberá um novo peer por defeito
-		
 		size_addr = sizeof(peer_addr);
 		recvfrom(sock_fd, buffer, MAX_MSG_LEN, 0, (struct sockaddr *)&peer_addr, (socklen_t *)&size_addr);
 		

@@ -8,40 +8,43 @@
 
 #include "sock_dg.h"
 
+void informGateway(){
+	int fd;
+	GatewayMsg msg;
+	
+	// Abre discr	
+	fd = socket(AF_INET, SOCK_DGRAM, 0);
+	checkError(fd, "socket");
+	
+	// Bind socket para peer UDP
+	local_addr.sin_family = AF_INET; // Definições da socket UDP
+	local_addr.sin_port= htons(GATEWAY_PORT_CLIENTS);
+	local_addr.sin_addr.s_addr= INADDR_ANY;		
+
+	msg.type = 
+	msg.
+
+	sendto(fd_udp, buffer, 1, 0, (struct sockaddr *)&gateway_addr, sizeof(gateway_addr)); // Envia 1 byte qualquer
+	
+}
+
 int main(){
 
 	int sock_fd_peerudp, sock_fd_peertcp, err;
 
-	//INICIALIZA SOCKET PEER UDP	
-	sock_fd_peerudp = socket(AF_INET, SOCK_DGRAM, 0);
-	checkError(sock_fd_peerudp, "socket");
+
 		
 
 	//INICIALIZA SOCKET PEER TCP
-	sock_fd_peertcp = socket(AF_INET, SOCK_DGRAM, 0); 
+	sock_fd_peertcp = socket(AF_INET, SOCK_STREAM, 0); 
 	checkError(sock_fd_peertcp, "socket");
 
 	
 	// Bind socket para peer UDP
 	local_addr.sin_family = AF_INET; // Definições da socket UDP
-	local_addr.sin_port= htons(GATEWAY_PORT_CLIENTS);
-	local_addr.sin_addr.s_addr= INADDR_ANY;	
-	err = bind(sock_fd_peerudp, (struct sockaddr *)&local_addr, sizeof(local_addr));
-	checkError(err, "bind");
-
-	// Bind socket para peer TCP
-	local_addr.sin_family = AF_INET;
 	local_addr.sin_port= htons(GATEWAY_PORT_PEERS);
-	local_addr.sin_addr.s_addr= INADDR_ANY;
-	err = bind(sock_fd_peertcp, (struct sockaddr *)&local_addr, sizeof(local_addr));
-	checkError(err, "bind");
+	local_addr.sin_addr.s_addr= INADDR_ANY;	
 
-//UDP
-	//ENVIA PARA GATEWAY
-	sendto(sock_fd_peerudp, buffer, sizeof(GatewayMsg), 0, (struct sockaddr *)&local_addr, sizeof(local_addr));
-	//RETURN E SUPOSTAMENTE ACABA AQUI A UDP
-
-	
 //TCP
 //   Listen
 //   Accept
