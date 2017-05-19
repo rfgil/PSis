@@ -16,6 +16,12 @@ typedef struct message_gw{
 	int port;
 } GatewayMsg;
 
+typedef struct peer_client{
+	int type;
+	char * file_name;
+	char * keyword;
+	uint32_t id_photo;
+} PicInfo;
 
 void checkError(int var, char * description){
 	if(var == -1) {
