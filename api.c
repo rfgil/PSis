@@ -76,7 +76,8 @@ int gallery_connect(char * host, in_port_t port){
 	return fd_tcp;
 }
 
-uint32_t gallery_add_photo(int peer_socket, char *file_name){ // TIPO 0
+// ----------------------------------------------
+uint32_t gallery_add_photo(int peer_socket, char *file_name){ // TIPO 1
 	PicInfo * novaimagem;
 	struct sockaddr_in peer_socket;
 	int size;
@@ -92,18 +93,19 @@ uint32_t gallery_add_photo(int peer_socket, char *file_name){ // TIPO 0
 		fseek(picture, 0, SEEK_END);
 		size = ftell(picture);
 		fseek(picture, 0, SEEK_SET);
-		buffer = serialize(size);
+		novaimagem->type=size;
+		buffer = serialize(novaimagem);
 		close(picture);
-		sendto(peer_socket, buffer, 1, 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
+		sendto(peer_socket, buffer,sizeof(PicInfo) , 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
 		// para o peer arranjar um vector com espaço pa isto
 		
 		
-		novaimagem->type=0;
+		novaimagem->type=1;
 		novaimagem->file_name=*file_name;
 		novaimagem->keyword=NULL;
 		novaimagem->id_photo=getpid(); //random number mas que nao se repita	
 		buffer = serialize(novaimagem);
-		sendto(peer_socket, buffer, 1, 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
+		sendto(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
 		
 		free(buffer);		
 		
@@ -111,22 +113,73 @@ uint32_t gallery_add_photo(int peer_socket, char *file_name){ // TIPO 0
 	}
 }
 
-
-int gallery_add_keyword(int peer_socket, uint32_t id_photo, char *keyword) { // TIPO 1
-	PicInfo * novakey;
+// ----------------------------------------------
+int gallery_add_keyword(int peer_socket, uint32_t id_photo, char *keyword) { // TIPO 2
+	PicInfo * novosdados;
 	struct sockaddr_in peer_socket;
 	char * buffer;
 	List * picList;
+
+	novosdados->type=2;
+	novosdados->keyword=keyword;
+	novosdados->id_photo=id_photo;	
+	buffer = serialize(novosdados);
+	sendto(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
+	free(buffer);		
 	
+}
 
-	else{
-		recvfrom(peer_socket, buffer, sizeof(GatewayMsg), 0, (struct sockaddr *)&gateway_addr, (socklen_t *)&err);
+// ----------------------------------------------
+int gallery_search_photo(int peer_socket, char * keyword, uint32_t ** id_photos) { // TIPO 3
+	PicInfo * novosdados;
+	struct sockaddr_in peer_socket;
+	int i;
+	uint32_t * photos_id
+	int * buffer;
 
-		novaimagem->keyword=keyword;
-		novaimagem->id_photo=id_photo;	
-		buffer = serialize(novaimagem);
-		sendto(peer_socket, buffer, 1, 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
-		free(buffer);		
+	if (peer_socket < 0 || *file_name == NULL){
+		return -1;
 	}
 
+	novosdados->type=3;
+	novosdados->keyword=keyword;
+	novosdados->id_photo=id_photos;	
+
+	buffer = serialize(novosdados);
+	sendto(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
+
+	isInterrupted = FALSE; 
+	alarm(TIME_OUT);/// é isto???
+	recvfrom(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&client_addr, (socklen_t *)&err);
+	novosdados = deserialize(buffer);
+	if (isInterrupted == TRUE){
+		return -1;
+	}
+
+	
+	buffer = (int*)calloc(novosdados->type, sizeof(uint32_t));
+	for( i=0 ; i < novosdados->type; i++ ) {
+		token = strtok(novosdados->id_photo, ',');
+		while( token != NULL ) {
+			buffer[i]= token;
+			token = strtok(NULL, ',');
+   		}
+   	} 
+   free(buffer);
+
+   return(novosdados->type);
 }
+
+// ----------------------------------------------
+int gallery_delete_photo(int peer_socket, uint32_t  id_photo) { // TIPO 4
+
+}
+
+int gallery_get_photo_name(int peer_socket, uint32_t id_photo, char **photo_name) { // TIPO 5
+
+}
+
+int gallery_get_photo(int peer_socket, uint32_t id_photo, char *file_name) { // TIPO 6
+
+}
+

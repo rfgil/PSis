@@ -5,6 +5,7 @@
 #include <sys/types.h> 
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <string.h>
 
 #include "sock_dg.h"
 
@@ -41,12 +42,15 @@ void informGateway(*buffer){
 
 }
 
-void handle_client(*arg)
+void handle_client(*arg) {
 	struct sockaddr_in client_addr;
 	char * buffer;
-	int sock_fd;
+	int sock_fd, tamanho, tipo, pic_id;
 	List * picList;
-	PicInfo * novaimagem;
+	List * aux;
+	PicInfo * novosdados;
+	PicInfo * picture;
+	PicInfo * pictureaux;
 		
 	buffer = malloc(MAX_MSG_LEN*sizeof(char));
 	
@@ -66,22 +70,62 @@ void handle_client(*arg)
 	recvfrom(fd_udp, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&client_addr, (socklen_t *)&err);
 	if (isInterrupted == TRUE){
 		return -1;
-	}	// aqui recebe o tamanho da foto nao sei para que
-	
-	isInterrupted = FALSE; 
-	alarm(TIME_OUT);
-	recvfrom(fd_udp, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&client_addr, (socklen_t *)&err);
-	if (isInterrupted == TRUE){
-		return -1;
+	}
+		
+	novosdados = deserialize(buffer);
+	tipo = novosdados->type;
+
+	if (tipo >10) {
+		tamanho = tipo;
+
+			recvfrom(fd_udp, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&client_addr, (socklen_t *)&err);
+			novosdados = deserialize(buffer);
+			if (novosdados->type == 1)
+			{
+				insertList(picList, novosdados);
+			}
+	}
+
+
+	if (tipo == 2) {
+		aux = picList;
+		while(aux != NULL){
+			picture = ((PicInfo *)aux->item);
+			if (strcmp(novosdados->id_photo, picture->id_photo) == 1) {
+				strcat (picture->keyword,',');
+				strcat (picture->keyword,novosdados->keyword);
+				break;
+			}		
+			aux = aux->next;
+		}
+	}
+
+	if (tipo == 3) {
+		aux = picList;
+		pictureaux->type=0;
+		while(aux != NULL){
+			picture = ((PicInfo *)aux->item);
+			token = strtok(picture->keyword, ',');
+   			while( token != NULL ) {
+   				if (strcmp(novosdados->keyword, token) == 1) { 
+   					pictureaux->type= 1 + pictureaux->type;
+
+   					strcat (pictureaux->id_photo,',');
+   					strcat (pictureaux->id_photo,novosdados->(* id_photo));
+
+ // melhorar isto
+   					break;
+   				}
+   			  token = strtok(NULL, ',');
+   			}
+   		aux = aux->next;
+		}		
+
+		buffer = serialize(pictureaux);
+		sendto(sock_fd, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&client_addr, sizeof(sock_fd));
+
 	}
 	
-	novaimagem = deserialize(buffer);
-	if (novaimagem->type==0) {
-		insertList(picList, novaimagem);
-	}
-	if (novaimagem->type==1) {
-		insertList(picList, novaimagem);
-	}
 	
 	free(buffer);	
 
