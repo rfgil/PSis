@@ -172,6 +172,33 @@ int gallery_search_photo(int peer_socket, char * keyword, uint32_t ** id_photos)
 
 // ----------------------------------------------
 int gallery_delete_photo(int peer_socket, uint32_t  id_photo) { // TIPO 4
+	PicInfo * novosdados;
+	struct sockaddr_in peer_socket;
+	int i;
+	uint32_t * photos_id
+	int * buffer;
+
+	if (peer_socket < 0 || *file_name == NULL){
+		return -1;
+	}
+
+	novosdados->type=4;
+	novosdados->id_photo=id_photos;	
+
+	buffer = serialize(novosdados);
+	sendto(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
+
+	isInterrupted = FALSE; 
+	alarm(TIME_OUT);/// é isto???
+	recvfrom(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&client_addr, (socklen_t *)&err);
+	novosdados = deserialize(buffer);
+	if (isInterrupted == TRUE){
+		return -1;
+	}
+
+   free(buffer);
+
+   return(novosdados->type);
 
 }
 

@@ -102,7 +102,7 @@ void handle_client(*arg) {
 
 	if (tipo == 3) {
 		aux = picList;
-		pictureaux->type=0;
+		pictureaux->id_photo=novosdados->id_photo;
 		while(aux != NULL){
 			picture = ((PicInfo *)aux->item);
 			token = strtok(picture->keyword, ',');
@@ -123,7 +123,25 @@ void handle_client(*arg) {
 
 		buffer = serialize(pictureaux);
 		sendto(sock_fd, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&client_addr, sizeof(sock_fd));
+	}
 
+	if (tipo == 4) {
+		novosdados->type=0;
+		if (picList != NULL && novosdados->type==0) {
+			aux = picList->next;
+		
+			pictureaux->type=0;
+			while(aux!= NULL){
+				picture = ((PicInfo *)aux->item);
+   			
+   				if(strcmp(novosdados->id_photo, picture->id_photo) == 1) {
+   			 		novosdados->type=1;
+   			 		picList->next = aux->next;
+   				}
+ 			picList = picList->next;
+   			aux = aux->next
+   			}
+		}
 	}
 	
 	
