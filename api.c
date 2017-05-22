@@ -103,7 +103,7 @@ uint32_t gallery_add_photo(int peer_socket, char *file_name){ // TIPO 1
 		novaimagem->type=1;
 		novaimagem->file_name=*file_name;
 		novaimagem->keyword=NULL;
-		novaimagem->id_photo=getpid(); //random number mas que nao se repita	
+		novaimagem->id_photo=getpid(); //random number mas que nao se repitA- NAO É SO ISTO FALTA QQR COISA
 		buffer = serialize(novaimagem);
 		sendto(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
 		
@@ -134,10 +134,9 @@ int gallery_search_photo(int peer_socket, char * keyword, uint32_t ** id_photos)
 	PicInfo * novosdados;
 	struct sockaddr_in peer_socket;
 	int i;
-	uint32_t * photos_id
 	int * buffer;
 
-	if (peer_socket < 0 || *file_name == NULL){
+	if (peer_socket < 0 || * keyword== NULL || ** id_photos== NULL){
 		return -1;
 	}
 
@@ -175,15 +174,14 @@ int gallery_delete_photo(int peer_socket, uint32_t  id_photo) { // TIPO 4
 	PicInfo * novosdados;
 	struct sockaddr_in peer_socket;
 	int i;
-	uint32_t * photos_id
 	int * buffer;
 
-	if (peer_socket < 0 || *file_name == NULL){
+	if (peer_socket < 0 || id_photo == NULL){
 		return -1;
 	}
 
 	novosdados->type=4;
-	novosdados->id_photo=id_photos;	
+	novosdados->id_photo=id_photo;	
 
 	buffer = serialize(novosdados);
 	sendto(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
@@ -202,11 +200,73 @@ int gallery_delete_photo(int peer_socket, uint32_t  id_photo) { // TIPO 4
 
 }
 
+// ----------------------------------------------
 int gallery_get_photo_name(int peer_socket, uint32_t id_photo, char **photo_name) { // TIPO 5
+	PicInfo * novosdados;
+	struct sockaddr_in peer_socket;
+	int *buffer;
+	
 
+	if (peer_socket < 0 || id_photo == NULL ){
+		return -1;
+	}
+
+	novosdados->type=5;
+	novosdados->id_photo=id_photo;	
+
+	// nao faco ideia se e isto que se faz
+
+	buffer = serialize(novosdados);
+	sendto(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
+
+	isInterrupted = FALSE; 
+	alarm(TIME_OUT);/// é isto???
+	recvfrom(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&client_addr, (socklen_t *)&err);
+	novosdados = deserialize(buffer);
+	if (isInterrupted == TRUE){
+		return -1;
+	}
+
+	**photo_name= (int*)calloc(novosdados->file_name, sizeof(char));
+
+   free(buffer);
+
+   return(novosdados->type);
 }
 
 int gallery_get_photo(int peer_socket, uint32_t id_photo, char *file_name) { // TIPO 6
+	PicInfo * novosdados;
+	struct sockaddr_in peer_socket;
+	int * buffer;
+	FILE *fp;
+	List *novaimagem;
 
+	if (peer_socket < 0 || id_photo == NULL){
+		return -1;
+	}
+
+	novosdados->type=6;
+	novosdados->id_photo=id_photo;	
+	novosdados->file_name=file_name;
+
+	buffer = serialize(novosdados);
+	sendto(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
+
+	isInterrupted = FALSE; 
+	alarm(TIME_OUT);/// é isto???
+	recvfrom(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&client_addr, (socklen_t *)&err);
+	novosdados = deserialize(buffer);
+	if (isInterrupted == TRUE){
+		return -1;
+	}
+	insertList(novaimagem, novosdados); // nao ha de ser bem assim é suposto aqui fazer se o download
+
+    sprintf(filename, "%c.%c", file_name, extensao); //onde é que arranjamos a extensao?
+    fp = fopen(filename,"w");
+	
+   	free(buffer);
+
+
+   return(novosdados->type);
 }
 

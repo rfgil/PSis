@@ -125,25 +125,39 @@ void handle_client(*arg) {
 		sendto(sock_fd, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&client_addr, sizeof(sock_fd));
 	}
 
-	if (tipo == 4) {
+	if (tipo == 4 || tipo == 5 || tipo ==6) {
 		novosdados->type=0;
 		if (picList != NULL && novosdados->type==0) {
 			aux = picList->next;
-		
-			pictureaux->type=0;
-			while(aux!= NULL){
+			while(aux!= NULL && novosdados->type==0){
 				picture = ((PicInfo *)aux->item);
    			
    				if(strcmp(novosdados->id_photo, picture->id_photo) == 1) {
    			 		novosdados->type=1;
-   			 		picList->next = aux->next;
+   			 		if (Tipo==4) {
+   			 			picList->next = aux->next;
+   			 		}
+   			 		if (Tipo==4) {
+   			 			novosdados->file_name = picture->file_name;
+   			 		}
+   			 		if (Tipo==6){
+   			 			picture = fopen(picture->file_name);
+						fseek(picture, 0, SEEK_END);
+						size = ftell(picture);
+						fseek(picture, 0, SEEK_SET);
+						novosdados->type=size;
+   			 		}
    				}
  			picList = picList->next;
    			aux = aux->next
    			}
 		}
+		buffer = serialize(novosdados);
+		sendto(sock_fd, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&client_addr, sizeof(sock_fd));
+		if(Tipo==6) {
+			close(picture);
+		}
 	}
-	
 	
 	free(buffer);	
 
