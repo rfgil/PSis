@@ -1,272 +1,274 @@
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <stdio.h>
+#include <stdlib.h>
+
+#include "Estruturas/headed_list.h"
 #include "global.h"
 #include "api.h"
 
 #define TIME_OUT 10
+#define CHUNK_SIZE 512
 
-int hasRead;
+static int myRead(int fd, void * buf, size_t nbytes){
+	fd_set rfds;
+	struct timeval timeout;
 
-int isInterrupted = FALSE;
+	int offset = 0;
 
-void alarmHandler(){
-	isInterrupted  = TRUE;
+	do {
+		FD_ZERO(&rfds);
+		FD_SET(fd, &rfds);
+		timeout.tv_sec = TIMEOUT;
+
+		select(fd + 1, &rfds, NULL, NULL, &timeout);
+		if (!FD_ISSET(fd, &rfds)) return ERROR; // Timeout
+
+		offset += read(fd, buf + offset, nbytes - offset);
+
+	} while(offset != nbytes);
+
+	return TRUE;
+}
+
+static int identify_photo_protocol(int peer_socket, uint32_t id_photo, int msg_id){
+	int check, size;
+
+	// Envia o identificador do tipo de mensagem que será enviado
+	check = send(peer_socket, &msg_id, sizeof(int), 0);
+	if (check == -1) return ERROR;
+
+	// Evia o id da foto em causa
+	check = send(peer_socket, &id_photo, sizeof(uint32_t), 0);
+	if (check == -1) return ERROR;
+
+	// Recebe o tamanho em bytes da foto identificada
+	check = myRead(peer_socket, &size, sizeof(int));
+	if (check == -1) return ERROR;
+
+	return size;
 }
 
 int gallery_connect(char * host, in_port_t port){
-	int fd_udp, fd_tcp, err, peer;
-	
-	struct sockaddr_in gateway_addr;
-	char * buffer;
 	GatewayMsg * msg;
-	
-	struct timeval stTimeOut;
-	struct sigaction sa;
-	
-	// INICIALIZA SOCKET CLIENT UDP
-	fd_udp = socket(AF_INET, SOCK_DGRAM, 0);
-	checkError(fd_udp, "socket");
-	
-	// Define addr da gateway
-	gateway_addr.sin_family = AF_INET;
-	gateway_addr.sin_port = port;
-	gateway_addr.sin_addr.s_addr = inet_ntoa(host);
-	
-	// Define função de handle para o alarm (SIGALARM)
-	memset (&sa, 0, sizeof(sa));
-	sa.sa_handler = alarmHandler;
-	sigaction(SIGALRM, &sa, NULL);
+	struct sockaddr_in addr;
+
+	fd_set rfds;
+	struct timeval timeout;
+
+	int fd_udp, fd_tcp, err;
+	char * buffer;
 
 	buffer = malloc(sizeof(GatewayMsg));
 
-	// Envia e recebe mensagem da gateway
-	sendto(fd_udp, buffer, 1, 0, (struct sockaddr *)&gateway_addr, sizeof(gateway_addr)); // Envia 1 byte qualquer
-	isInterrupted = FALSE; 
-	alarm(TIME_OUT);
-	recvfrom(fd_udp, buffer, sizeof(GatewayMsg), 0, (struct sockaddr *)&gateway_addr, (socklen_t *)&err);
-	if (isInterrupted == TRUE){
-		return -1;
+	// INICIALIZA SOCKET CLIENT UDP
+	fd_udp = socket(AF_INET, SOCK_DGRAM, 0);
+	assert(fd_udp != -1);
+
+	// Define addr da gateway
+	addr.sin_family = AF_INET;
+	addr.sin_port = port;
+	err = inet_aton(host, &addr.sin_addr);
+	assert(err != 0);
+
+	// Envia mensagem para a gateway (1 byte qualquer)
+	err = sendto(fd_udp, buffer, 1, 0, (struct sockaddr *) &addr, sizeof(addr));
+	assert(err != -1);
+
+	// TIME_OUT
+	FD_ZERO(&rfds);
+	FD_SET(fd_udp, &rfds);
+	timeout.tv_sec = TIMEOUT;
+
+	err = select(fd_udp + 1, &rfds, (fd_set *) NULL, (fd_set *) NULL, &timeout);
+	assert(err != -1);
+
+	if (!FD_ISSET(fd_udp, &rfds)){
+		return -1; // Timeout (Assum que não é possivel aceder à gateway)
 	}
-	
-	msg = deserialize(buffer);
-	
+
+	// Recebe resposta da gateway
+	recvfrom(fd_udp, buffer, sizeof(GatewayMsg), 0, (struct sockaddr *)&addr, (socklen_t *)&err);
+	msg = deserializeGatewayMsg(buffer);
+
 	if (msg->type == 0){
-		// No peer is available
-		return 0;
+		return 0; // No peer is available
 	}
-	
+
 	// Abrir socket tcp
-	fd_tcp = socket(AF_INET, SOCK_STREAM, 0); 
-	checkError(fd_tcp, "socket");
+	fd_tcp = socket(AF_INET, SOCK_STREAM, 0);
+	assert(fd_tcp != -1);
 
 	// Define addr do peer
-	local_addr.sin_family = AF_INET;
-	local_addr.sin_port= htons(msg->port);
-	local_addr.sin_addr.s_addr= inet_ntoa(msg->address);
-	
-	peer = connect(fd_tcp, msg->address, sizeof(msg->address);
-	
-	
+	addr.sin_family = AF_INET;
+	addr.sin_port= htons(msg->port);
+	err = inet_aton(msg->address, &addr.sin_addr);
+	assert(err != -0);
+
+	err = connect(fd_tcp, (struct sockaddr *) &addr, sizeof(struct sockaddr_in));
+	assert(err != -1);
+
 	return fd_tcp;
 }
 
-// ----------------------------------------------
-uint32_t gallery_add_photo(int peer_socket, char *file_name){ // TIPO 1
-	PicInfo * novaimagem;
-	struct sockaddr_in peer_socket;
-	int size;
-	FILE *picture;
-	
-	if (peer_socket < 0 || *file_name == NULL){
+uint32_t gallery_add_photo(int peer_socket, char * file_name){
+	FILE * image_file;
+	unsigned char * buffer;
+	int size, check, nbytes, id;
+
+	if (peer_socket < 0 || file_name == NULL){
 		return 0;
 	}
-	
 
-	else{	
-		picture = fopen(file_name);
-		fseek(picture, 0, SEEK_END);
-		size = ftell(picture);
-		fseek(picture, 0, SEEK_SET);
-		novaimagem->type=size;
-		buffer = serialize(novaimagem);
-		close(picture);
-		sendto(peer_socket, buffer,sizeof(PicInfo) , 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
-		// para o peer arranjar um vector com espaço pa isto
-		
-		
-		novaimagem->type=1;
-		novaimagem->file_name=*file_name;
-		novaimagem->keyword=NULL;
-		novaimagem->id_photo=getpid(); //random number mas que nao se repitA- NAO É SO ISTO FALTA QQR COISA
-		buffer = serialize(novaimagem);
-		sendto(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
-		
-		free(buffer);		
-		
-		return (novaimagem->id_photo);
+	image_file = fopen(file_name, "rb");
+	if (image_file == NULL)	return 0; // Nesta função o erro é 0
+
+	// Envia identificador do tipo de mensagem que será enviado
+	check = send(peer_socket, MSG_NEW_IMAGE, sizeof(int), 0);
+	if (check == -1) return 0;
+
+	// Envia tamanho da string file_name
+	size = strlen(file_name);
+	check = send(peer_socket, &size, sizeof(int), 0);
+	if (check == -1) return 0;
+
+	// Envia file_name
+	check = send(peer_socket, file_name, size*sizeof(char), 0);
+	if (check == -1) return 0;
+
+	// Envia tamanho da imagem
+	fseek(image_file, 0, SEEK_END); // Permite a leitura do tamanho da imagem
+	size = ftell(image_file);
+	check = send(peer_socket, &size, sizeof(int), 0);
+	if (check == -1) return 0;
+
+	// Envia a imagem
+	fseek(image_file, 0, SEEK_SET); // Regressa ao inicio do ficheiro
+	buffer = (unsigned char *) malloc(CHUNK_SIZE*sizeof(char));
+
+	while ( (nbytes = fread(buffer, sizeof(char), CHUNK_SIZE, image_file) ) > 0) {
+		check = send(peer_socket, buffer, nbytes, 0);
+		if (check == -1) return 0;
 	}
+	free(buffer);
+
+	// Recebe id da imagem
+	check = myRead(peer_socket, &id, sizeof(int));
+	if (check == -1) return 0;
+
+	return id;
 }
 
-// ----------------------------------------------
-int gallery_add_keyword(int peer_socket, uint32_t id_photo, char *keyword) { // TIPO 2
-	PicInfo * novosdados;
-	struct sockaddr_in peer_socket;
-	char * buffer;
-	List * picList;
+int gallery_add_keyword(int peer_socket, uint32_t id_photo, char * keyword) {
+	int check, size;
 
-	novosdados->type=2;
-	novosdados->keyword=keyword;
-	novosdados->id_photo=id_photo;	
-	buffer = serialize(novosdados);
-	sendto(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
-	free(buffer);		
-	
+	size = identify_photo_protocol(peer_socket, id_photo, MSG_ADD_KEYWORD);
+	if (size == 0) return FALSE; // A foto não existe
+	if (size < 0) return ERROR;
+
+	size = strlen(keyword);
+	check = send(peer_socket, &size, sizeof(int), 0);
+	if (check == -1) return ERROR;
+
+	check = send(peer_socket, keyword, size*sizeof(char), 0);
+	if (check == -1) return ERROR;
+
+	return TRUE;
 }
 
-// ----------------------------------------------
-int gallery_search_photo(int peer_socket, char * keyword, uint32_t ** id_photos) { // TIPO 3
-	PicInfo * novosdados;
-	struct sockaddr_in peer_socket;
-	int i;
-	int * buffer;
+int gallery_search_photo(int peer_socket, char * keyword, uint32_t ** id_photos) {
+	int check, msg_id, i, size;
+	int photos_count;
 
-	if (peer_socket < 0 || * keyword== NULL || ** id_photos== NULL){
+	//uint32_t * received_id;
+
+	if (peer_socket < 0 || keyword == NULL){
 		return -1;
 	}
 
-	novosdados->type=3;
-	novosdados->keyword=keyword;
-	novosdados->id_photo=id_photos;	
+	// Envia o identificador do tipo de mensagem que será enviado
+	msg_id = MSG_SEARCH_PHOTO;
+	check = send(peer_socket, &msg_id, sizeof(int), 0);
+	if (check == -1) return ERROR;
 
-	buffer = serialize(novosdados);
-	sendto(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
+	// Envia tamanho da keyword
+	size = strlen(keyword);
+	check = send(peer_socket, &msg_id, sizeof(int), 0);
+	if (check == -1) return ERROR;
 
-	isInterrupted = FALSE; 
-	alarm(TIME_OUT);/// é isto???
-	recvfrom(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&client_addr, (socklen_t *)&err);
-	novosdados = deserialize(buffer);
-	if (isInterrupted == TRUE){
-		return -1;
+	// Envia a keyword
+	check = send(peer_socket, keyword, size*sizeof(int), 0);
+	if (check == -1) return ERROR;
+
+	// Recebe numero de ids que vai receber
+	check = myRead(peer_socket, &photos_count, sizeof(int));
+	if (check == -1) return ERROR;
+
+	// Aloca espaço para o vetor de ids
+	*id_photos = (uint32_t *) calloc(photos_count, sizeof(uint32_t));
+
+	// Recebe os vários ids
+	for(i = 0; i<photos_count; i++){
+		check = myRead(peer_socket, &(*id_photos[i]), sizeof(uint32_t));
+		if (check == -1) return ERROR;
 	}
 
-	
-	buffer = (int*)calloc(novosdados->type, sizeof(uint32_t));
-	for( i=0 ; i < novosdados->type; i++ ) {
-		token = strtok(novosdados->id_photo, ',');
-		while( token != NULL ) {
-			buffer[i]= token;
-			token = strtok(NULL, ',');
-   		}
-   	} 
-   free(buffer);
-
-   return(novosdados->type);
+	return photos_count; // A variavel i irá conter o size da lista
 }
 
-// ----------------------------------------------
-int gallery_delete_photo(int peer_socket, uint32_t  id_photo) { // TIPO 4
-	PicInfo * novosdados;
-	struct sockaddr_in peer_socket;
-	int i;
-	int * buffer;
+int gallery_delete_photo(int peer_socket, uint32_t  id_photo) {
+	int size;
 
-	if (peer_socket < 0 || id_photo == NULL){
-		return -1;
-	}
+	size = identify_photo_protocol(peer_socket, id_photo, MSG_DELETE_PHOTO);
+	if (size == 0) return FALSE; // A foto não existe
+	if (size < 0) return ERROR;
 
-	novosdados->type=4;
-	novosdados->id_photo=id_photo;	
-
-	buffer = serialize(novosdados);
-	sendto(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
-
-	isInterrupted = FALSE; 
-	alarm(TIME_OUT);/// é isto???
-	recvfrom(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&client_addr, (socklen_t *)&err);
-	novosdados = deserialize(buffer);
-	if (isInterrupted == TRUE){
-		return -1;
-	}
-
-   free(buffer);
-
-   return(novosdados->type);
-
+	return TRUE;
 }
 
-// ----------------------------------------------
-int gallery_get_photo_name(int peer_socket, uint32_t id_photo, char **photo_name) { // TIPO 5
-	PicInfo * novosdados;
-	struct sockaddr_in peer_socket;
-	int *buffer;
-	
+int gallery_get_photo_name(int peer_socket, uint32_t id_photo, char ** photo_name) {
+	int check, size;
 
-	if (peer_socket < 0 || id_photo == NULL ){
-		return -1;
-	}
+	size = identify_photo_protocol(peer_socket, id_photo, MSG_GET_PHOTO_NAME);
+	if (size == 0) return FALSE;
+	if (size < 0) return ERROR;
 
-	novosdados->type=5;
-	novosdados->id_photo=id_photo;	
+	// Aloca espaço necessário para armazenar a string
+	*photo_name = (char *) malloc((size + 1)*sizeof(char));
+	*photo_name[size] = '\0';
 
-	// nao faco ideia se e isto que se faz
+	check = myRead(peer_socket, *photo_name, size*sizeof(char));
+	if (check == -1) return ERROR;
 
-	buffer = serialize(novosdados);
-	sendto(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
-
-	isInterrupted = FALSE; 
-	alarm(TIME_OUT);/// é isto???
-	recvfrom(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&client_addr, (socklen_t *)&err);
-	novosdados = deserialize(buffer);
-	if (isInterrupted == TRUE){
-		return -1;
-	}
-
-	**photo_name= (int*)calloc(novosdados->file_name, sizeof(char));
-
-   free(buffer);
-
-   return(novosdados->type);
+	return TRUE;
 }
 
-int gallery_get_photo(int peer_socket, uint32_t id_photo, char *file_name) { // TIPO 6
-	PicInfo * novosdados;
-	struct sockaddr_in peer_socket;
-	int * buffer;
-	FILE *fp;
-	List *novaimagem;
+int gallery_get_photo(int peer_socket, uint32_t id_photo, char *file_name) {
+	int check, size, read_chunck_size;
+	char buffer[CHUNK_SIZE];
+	FILE * file;
 
-	if (peer_socket < 0 || id_photo == NULL){
-		return -1;
+	size = identify_photo_protocol(peer_socket, id_photo, MSG_GET_PHOTO);
+	if (size == 0) return FALSE;
+	if (size < 0) return ERROR;
+
+	file = fopen(file_name, "wb");
+
+	while(size > 0){
+		read_chunck_size = size > CHUNK_SIZE ? CHUNK_SIZE : size;
+
+		check = myRead(peer_socket, &buffer, read_chunck_size);
+		if (check == -1) return ERROR;
+
+		fwrite(buffer, sizeof(char), read_chunck_size, file);
+
+		size -= read_chunck_size;
 	}
 
-	novosdados->type=6;
-	novosdados->id_photo=id_photo;	
-	novosdados->file_name=file_name;
+	fclose(file);
 
-	buffer = serialize(novosdados);
-	sendto(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&peer_socket, sizeof(peer_socket));
-
-	isInterrupted = FALSE; 
-	alarm(TIME_OUT);/// é isto???
-	recvfrom(peer_socket, buffer, sizeof(PicInfo), 0, (struct sockaddr *)&client_addr, (socklen_t *)&err);
-	novosdados = deserialize(buffer);
-	if (isInterrupted == TRUE){
-		return -1;
-	}
-	insertList(novaimagem, novosdados); // nao ha de ser bem assim é suposto aqui fazer se o download
-
-    sprintf(filename, "%c.%c", file_name, extensao); //onde é que arranjamos a extensao?
-    fp = fopen(filename,"w");
-	
-   	free(buffer);
-
-
-   return(novosdados->type);
+	return TRUE;
 }
-
