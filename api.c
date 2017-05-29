@@ -1,7 +1,5 @@
-
 #include <sys/time.h>
 #include <sys/types.h>
-#include <unistd.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,50 +8,32 @@
 #include "global.h"
 #include "api.h"
 
-#define TIME_OUT 10
-#define CHUNK_SIZE 512
-
-static int myRead(int fd, void * buf, size_t nbytes){
-	fd_set rfds;
-	struct timeval timeout;
-
-	int offset = 0;
-
-	do {
-		FD_ZERO(&rfds);
-		FD_SET(fd, &rfds);
-		timeout.tv_sec = TIMEOUT;
-
-		select(fd + 1, &rfds, NULL, NULL, &timeout);
-		if (!FD_ISSET(fd, &rfds)) return ERROR; // Timeout
-
-		offset += read(fd, buf + offset, nbytes - offset);
-
-	} while(offset != nbytes);
-
-	return TRUE;
-}
-
 static int identify_photo_protocol(int peer_socket, uint32_t id_photo, int msg_id){
 	int check, size;
+
+	// Informação enviada:
+	// int - identificador da mensagem
+	// int - id da imagem
+	// Aguarda confirmação de que a imagem existe (int)
 
 	// Envia o identificador do tipo de mensagem que será enviado
 	check = send(peer_socket, &msg_id, sizeof(int), 0);
 	if (check == -1) return ERROR;
 
-	// Evia o id da foto em causa
+	// Envia o id da foto em causa
 	check = send(peer_socket, &id_photo, sizeof(uint32_t), 0);
 	if (check == -1) return ERROR;
 
 	// Recebe o tamanho em bytes da foto identificada
-	check = myRead(peer_socket, &size, sizeof(int));
-	if (check == -1) return ERROR;
+	check = myRead(peer_socket, &size, sizeof(int), TIMEOUT);
+	if (check == ERROR) return ERROR;
 
 	return size;
 }
 
 int gallery_connect(char * host, in_port_t port){
-	GatewayMsg * msg;
+	int badjoras = 0;
+	/*GatewayMsg * msg;
 	struct sockaddr_in addr;
 
 	fd_set rfds;
@@ -112,22 +92,30 @@ int gallery_connect(char * host, in_port_t port){
 	assert(err != -1);
 
 	return fd_tcp;
+	*/return badjoras;
 }
 
 uint32_t gallery_add_photo(int peer_socket, char * file_name){
-	FILE * image_file;
-	unsigned char * buffer;
+	FILE * image_file = NULL;
+	unsigned char buffer[CHUNK_SIZE];
 	int size, check, nbytes, id;
 
 	if (peer_socket < 0 || file_name == NULL){
 		return 0;
 	}
 
+	// Informação enviada:
+	// int - identificador da mensagem
+	// int - tamanho da string file_name
+	// char - file_name
+	// int - tamanho da imagem
+	// char - imagem
+
 	image_file = fopen(file_name, "rb");
 	if (image_file == NULL)	return 0; // Nesta função o erro é 0
 
 	// Envia identificador do tipo de mensagem que será enviado
-	check = send(peer_socket, MSG_NEW_IMAGE, sizeof(int), 0);
+	check = send(peer_socket, MSG_CLIENT_NEW_IMAGE, sizeof(int), 0);
 	if (check == -1) return 0;
 
 	// Envia tamanho da string file_name
@@ -139,7 +127,7 @@ uint32_t gallery_add_photo(int peer_socket, char * file_name){
 	check = send(peer_socket, file_name, size*sizeof(char), 0);
 	if (check == -1) return 0;
 
-	// Envia tamanho da imagem
+	// Envia tamanho da imagem (em bytes)
 	fseek(image_file, 0, SEEK_END); // Permite a leitura do tamanho da imagem
 	size = ftell(image_file);
 	check = send(peer_socket, &size, sizeof(int), 0);
@@ -147,16 +135,13 @@ uint32_t gallery_add_photo(int peer_socket, char * file_name){
 
 	// Envia a imagem
 	fseek(image_file, 0, SEEK_SET); // Regressa ao inicio do ficheiro
-	buffer = (unsigned char *) malloc(CHUNK_SIZE*sizeof(char));
-
 	while ( (nbytes = fread(buffer, sizeof(char), CHUNK_SIZE, image_file) ) > 0) {
 		check = send(peer_socket, buffer, nbytes, 0);
 		if (check == -1) return 0;
 	}
-	free(buffer);
 
 	// Recebe id da imagem
-	check = myRead(peer_socket, &id, sizeof(int));
+	check = myRead(peer_socket, &id, sizeof(int), TIMEOUT);
 	if (check == -1) return 0;
 
 	return id;
@@ -204,7 +189,7 @@ int gallery_search_photo(int peer_socket, char * keyword, uint32_t ** id_photos)
 	if (check == -1) return ERROR;
 
 	// Recebe numero de ids que vai receber
-	check = myRead(peer_socket, &photos_count, sizeof(int));
+	check = myRead(peer_socket, &photos_count, sizeof(int), TIMEOUT);
 	if (check == -1) return ERROR;
 
 	// Aloca espaço para o vetor de ids
@@ -212,7 +197,7 @@ int gallery_search_photo(int peer_socket, char * keyword, uint32_t ** id_photos)
 
 	// Recebe os vários ids
 	for(i = 0; i<photos_count; i++){
-		check = myRead(peer_socket, &(*id_photos[i]), sizeof(uint32_t));
+		check = myRead(peer_socket, &(*id_photos[i]), sizeof(uint32_t), TIMEOUT);
 		if (check == -1) return ERROR;
 	}
 
@@ -232,15 +217,19 @@ int gallery_delete_photo(int peer_socket, uint32_t  id_photo) {
 int gallery_get_photo_name(int peer_socket, uint32_t id_photo, char ** photo_name) {
 	int check, size;
 
-	size = identify_photo_protocol(peer_socket, id_photo, MSG_GET_PHOTO_NAME);
-	if (size == 0) return FALSE;
-	if (size < 0) return ERROR;
+	check = identify_photo_protocol(peer_socket, id_photo, MSG_GET_PHOTO_NAME);
+	if (check == 0) return FALSE;
+	if (check < 0) return ERROR;
+
+	// Recebe tamanho da string file_name
+	check = myRead(peer_socket, &size, sizeof(int), TIMEOUT);
+	if (check == -1) return ERROR;
 
 	// Aloca espaço necessário para armazenar a string
 	*photo_name = (char *) malloc((size + 1)*sizeof(char));
 	*photo_name[size] = '\0';
 
-	check = myRead(peer_socket, *photo_name, size*sizeof(char));
+	check = myRead(peer_socket, *photo_name, size*sizeof(char), TIMEOUT);
 	if (check == -1) return ERROR;
 
 	return TRUE;
@@ -260,7 +249,7 @@ int gallery_get_photo(int peer_socket, uint32_t id_photo, char *file_name) {
 	while(size > 0){
 		read_chunck_size = size > CHUNK_SIZE ? CHUNK_SIZE : size;
 
-		check = myRead(peer_socket, &buffer, read_chunck_size);
+		check = myRead(peer_socket, &buffer, read_chunck_size, TIMEOUT);
 		if (check == -1) return ERROR;
 
 		fwrite(buffer, sizeof(char), read_chunck_size, file);

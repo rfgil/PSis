@@ -3,3 +3,6 @@ default: Estruturas/list.c
 
 gateway:
 	gcc -Wall -g -pthread -std=c99 -D_XOPEN_SOURCE gateway.c Estruturas/list.c -o gateway
+
+peer:
+	gcc -Wall -g -pthread peer.c peer_api.c Estruturas/headed_list.c -o peer

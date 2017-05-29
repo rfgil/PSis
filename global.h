@@ -6,6 +6,8 @@
 #include <assert.h>
 #include <string.h>
 
+#include <unistd.h>
+
 #define TRUE 1
 #define FALSE 0
 #define ERROR -1
@@ -17,73 +19,44 @@
 
 #define TIMEOUT 5 //segundos
 
-typedef struct network_msg{
-	int msg_id;
-	void * info;
-} NetworkMsg;
+#define PEER_FOLDER_PREFIX "peer/"
 
-// Mensagens enviadas do cliente para o peer
-#define MSG_NEW_IMAGE 0
-#define MSG_ADD_KEYWORD 1
-#define MSG_SEARCH_PHOTO 2
-#define MSG_DELETE_PHOTO 3
-#define MSG_GET_PHOTO_NAME 4
-#define MSG_GET_PHOTO 5
+#define TIME_OUT 10
 
+#define CHUNK_SIZE 512 // Nº de bytes da imagem lidos/escritos simultaneamente
 
+// Identificadores das mensagens trocadas
+#define MSG_CLIENT_NEW_IMAGE 0
+#define MSG_PEER_NEW_IMAGE 1
+#define MSG_ADD_KEYWORD 2
+#define MSG_SEARCH_PHOTO 3
+#define MSG_DELETE_PHOTO 4
+#define MSG_GET_PHOTO_NAME 5
+#define MSG_GET_PHOTO 6
 
-typedef struct message_gw{
-	int type;
-	char address[20];
-	int port;
-} GatewayMsg;
+int myRead(int fd, void * buf, size_t nbytes, int timeout){
+	fd_set rfds;
+	struct timeval timer;
 
-typedef struct image_info{
-	uint32_t id;
-	char * name;
-	long size;
-} ImageInfo;
+	int read_size;
+	int offset = 0;
 
-GatewayMsg * deserializeGatewayMsg(char * buffer){
-	GatewayMsg * msg;
+	do {
+		FD_ZERO(&rfds);
+		FD_SET(fd, &rfds);
+		timer.tv_sec = timeout;
 
-	msg = (GatewayMsg *) malloc(sizeof(GatewayMsg));
-	assert(msg != NULL);
+		select(fd + 1, &rfds, NULL, NULL, timeout < 0 ? NULL : &timer);
+		if (!FD_ISSET(fd, &rfds)) return ERROR; // Timeout ou interrupção
 
-	memcpy(msg, buffer, sizeof(GatewayMsg));
-	return msg;
-}
+		read_size = read(fd, buf + offset, nbytes - offset);
+		if(read_size <= 0) return ERROR; // A ligação foi termianda ou ocorreu um erro ao ler
 
-char * serializeGatewayMsg(GatewayMsg * msg){
-	char * buffer;
+		offset += read_size;
 
-	buffer = (char *) malloc(sizeof(GatewayMsg));
-	assert(buffer != NULL);
+	} while(offset != nbytes);
 
-	memcpy(buffer, msg, sizeof(GatewayMsg));
-	return buffer;
-}
-
-unsigned char * serializeImageInfo(ImageInfo * img, int * size){
-	unsigned char * buffer;
-	int aux;
-
-	*size = sizeof(uint32_t) + sizeof(long) + (strlen(img->name) + 1)*sizeof(char);
-
-	buffer = (unsigned char *) malloc(*size);
-	aux = 0;
-
-	memcpy(buffer + aux, &img->id, sizeof(uint32_t));
-	aux += sizeof(uint32_t);
-
-	memcpy(buffer + aux, &img->size, sizeof(long));
-	aux += sizeof(long);
-
-	memcpy(buffer + aux, img->name, (strlen(img->name)+1)*sizeof(char));
-	aux += (strlen(img->name)+1) * sizeof(char);
-
-	assert(*size != aux); // Confirmação de que foi tudo serializado corretamente
-	return buffer;
+	return TRUE;
 }
 
 #endif
