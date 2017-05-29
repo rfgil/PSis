@@ -3,9 +3,16 @@
 
 typedef struct list_head List;
 
-List * newList();
-void insertList(List * list, void * item);
-void freeList(List * list, void (*freeItem)(void *));
+#define SMALLER -1
+#define EQUAL 0
+#define GREATER 1
+
+List * newList(int (*compareItemWithId)(void *, void *), void (*freeItem) (void *));
+void freeList(List * list);
+
+void insertListItem(List * list, void * item, void * item_id);
+void * removeListItem(List * list, void * id);
+void * findListItem(List * list, void * id);
 
 void startListIteration(List * list);
 void * getListNextItem(List * list);
