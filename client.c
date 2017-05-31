@@ -2,70 +2,166 @@
 #include <sys/un.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <sys/types.h> 
+#include <sys/types.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 
+#include "global.h"
 #include "api.h"
 
-void checkError(int var, char * description){
-	if(var == -1) {
-		perror(description);
-		exit(-1);
-	}
+static int getUserInput(char * message, char * buffer){
+  printf("%s", message);
+  if (fgets(buffer, CHUNK_SIZE, stdin) == NULL) return ERROR;
+  buffer[strlen(buffer) - 1] = '\0';
+  return TRUE;
 }
 
+int client_add_photo(int fd, char * buffer){
+  getUserInput("Photo file: ", buffer);
+  return gallery_add_photo(fd, buffer);
+}
+
+int client_add_keyword(int fd, char * buffer){
+  uint32_t id;
+
+  do {
+    getUserInput("ID da foto: ", buffer);
+  } while(sscanf(buffer, "%d ", &id) != 1);
+
+  getUserInput("Keyword: ", buffer);
+
+  return gallery_add_keyword(fd, id, buffer);
+}
+
+int client_search_photo(int fd, char * buffer){
+  uint32_t * id_photos;
+  int count, i;
+
+  getUserInput("Keyword: ", buffer);
+
+  count = gallery_search_photo(fd, buffer, &id_photos);
+  if (count == ERROR) return ERROR;
+
+  printf("Found ids: ");
+  for(i = 0; i<count; i++){
+    printf("%d ", id_photos[i]);
+  }
+  printf("\n");
+
+  free(id_photos);
+
+  return TRUE;
+}
+
+int client_delete_photo(int fd, char * buffer){
+  uint32_t id;
+
+  do {
+    getUserInput("ID da foto: ", buffer);
+  } while(sscanf(buffer, "%d ", &id) != 1);
+
+  return gallery_delete_photo(fd, id);
+}
+
+int client_get_photo_name(int fd, char * buffer){
+  uint32_t id;
+  char * photo_name;
+  int check;
+
+  do {
+    getUserInput("ID da foto: ", buffer);
+  } while(sscanf(buffer, "%d ", &id) != 1);
+
+  check = gallery_get_photo_name(fd, id, &photo_name);
+  if (check == ERROR || check == FALSE) return check;
+
+  printf("Photo name: %s\n", photo_name);
+  free(photo_name);
+
+  return TRUE;
+}
+
+int client_get_photo(int fd, char * buffer){
+  uint32_t id;
+
+  do {
+    getUserInput("ID da foto: ", buffer);
+  } while(sscanf(buffer, "%d ", &id) != 1);
+
+  getUserInput("Guardar no ficheiro: ", buffer);
+
+  return gallery_get_photo(fd, id, buffer);
+}
+
+
 int main(int argc, char *argv[]){
-	int fd_udp, fd_tcp, err;
-	struct sockaddr_in gateway_addr;
-	char * buffer;
-	GatewayMsg * msg;
+  char buffer[CHUNK_SIZE];
+  int command, check;
+  int fd = ERROR; // Não inicializada por defeito
 
-	// INICIALIZA SOCKET CLIENT UDP
-	fd_udp = socket(AF_INET, SOCK_DGRAM, 0);
-	checkError(fd_udp, "socket");
-	
-		
-	local_addr.sin_family = AF_INET; // Definições da socket UDP
-	local_addr.sin_port = htons(GATEWAY_PORT_CLIENTS);
-	local_addr.sin_addr.s_addr = INADDR_ANY;
+  assert(argc > 2);
 
-	buffer = malloc(sizeof(char));
+  fd = gallery_connect(argv[1], htons(atoi(argv[2])));
+  if (fd == ERROR) { perror(NULL); return 1; }
 
-	// ENVIA PARA GATEWAY
-	sendto(fd_udp, buffer, 1, 0, (struct sockaddr *)&gateway_addr, sizeof(local_addr));
-	
+  do {
+    printf("Choose command:\n"
+           "1. Add Photo - arg1: file_name\n"
+           "2. Add Keyword\n"
+           "3. Search Photo\n"
+           "4. Delete Photo\n"
+           "5. Get Photo Name\n"
+           "6. Get Photo\n"
+           "0. Quit\n");
 
-	
-	
-	
+    if ( fgets(buffer, CHUNK_SIZE, stdin) == NULL) continue;
+    if ( sscanf(buffer, "%d ", &command) != 1 ) command = -1;
 
-	
+    switch (command) {
+      case 0:
+        break;
 
-	//INICIALIZA SOCKET CLIENT TCP
-	sock_fd_clienttcp = socket(AF_INET, SOCK_DGRAM, 0); 
-	checkError(sock_fd_client, "socket");
+      case 1: // Add Photo
+        check = client_add_photo(fd, buffer);
+        break;
 
-	// Bind socket para clientes TCP
-	local_addr.sin_family = AF_INET;
-	local_addr.sin_port= htons(GATEWAY_PORT_PEERS);
-	local_addr.sin_addr.s_addr= INADDR_ANY;
-	err = bind(sock_fd_clienttcp, (struct sockaddr *)&local_addr, sizeof(local_addr));
-	checkError(err, "bind");
+      case 2: // Add Keyword
+        check = client_add_keyword(fd, buffer);
+        break;
 
+      case 3: // Search Photo
+        check = client_search_photo(fd, buffer);
+        break;
 
+      case 4: // Delete Photo
+        check = client_delete_photo(fd, buffer);
+        break;
 
-	
-	//RECEBE DA GATEWAY
-	recv(sock_fd_clienttcp, buffer, sizeof(GatewayMsg), 0, (struct sockaddr *)&local_addr, sizeof(local_addr));
-	
-//    CONNECT
-//    SEND/RECV
+      case 5: // Get Photo Name
+        check = client_get_photo_name(fd, buffer);
+        break;
 
-	//Close
-	close(sock_fd_clientudp);
-	close(sock_fd_clienttcp);
+      case 6: // Get Photo
+        check = client_get_photo(fd, buffer);
+        break;
 
+      default:
+        printf("Invalid command!\n");
+        continue;
+    }
 
-	return 0;
+    if (check == ERROR){
+      command = 0; // Termina aplicação
+      
+      printf("An error occurred.\n");
+      perror(NULL);
+    } else {
+      printf("Done! (%d)\n", check);
+    }
+
+  } while(command != 0); // Diferente de QUIT
+
+  close(fd);
+
+  return 0;
 }

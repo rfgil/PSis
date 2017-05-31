@@ -1,7 +1,8 @@
 #ifndef PEER_API_H_INCLUDED
 #define PEER_API_H_INCLUDED
 
-#include "stdint.h"
+#include <stdint.h>
+#include <unistd.h>
 
 #include "Estruturas/headed_list.h"
 

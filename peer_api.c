@@ -8,8 +8,56 @@
 #include "peer_api.h"
 #include "global.h"
 
+static int myRead(int fd, void * buf, size_t nbytes, int timeout){
+	fd_set rfds;
+	struct timeval timer;
+
+	int read_size;
+	int offset = 0;
+
+	do {
+		FD_ZERO(&rfds);
+		FD_SET(fd, &rfds);
+		timer.tv_sec = timeout;
+
+		select(fd + 1, &rfds, NULL, NULL, timeout < 0 ? NULL : &timer);
+		if (!FD_ISSET(fd, &rfds)) return ERROR; // Timeout ou interrupção
+
+		read_size = read(fd, buf + offset, nbytes - offset);
+		if(read_size <= 0) return ERROR; // A ligação foi termianda ou ocorreu um erro ao ler
+
+		offset += read_size;
+
+	} while(offset != nbytes);
+
+	return TRUE;
+}
+
+static char * getFileExtension(char * buffer){
+	int i;
+
+	for (i = (strlen(buffer) - 1); i >= 0; i--){
+		if (buffer[i] == '.') return &buffer[i];
+	}
+
+	return buffer;
+}
+
+static char * getPhotoFileName(Photo * photo){
+	char * buffer = malloc(strlen(PEER_FOLDER_PREFIX) + 17); // id_max=2^32 -> 10 caracteres, Nenhuma extensão de imagens ocupa mais de 6 caracteres, +1 para \0
+	sprintf(buffer, "%s%d%s", PEER_FOLDER_PREFIX, photo->id, getFileExtension(photo->file_name));
+	return buffer;
+}
 
 void freePhoto(void * item){
+	Photo * photo = (Photo *) item;
+	char * image_file_name;
+
+	// Apaga ficheiro da imagem
+	image_file_name = getPhotoFileName(photo);
+	unlink(image_file_name);
+	free(image_file_name);
+
 	free(item);
 }
 int comparePhotoWithPhotoId(void * a, void * id){
@@ -30,7 +78,6 @@ int getNewPhotoID(List * photos_list){
   // Para já o novo id será o tamanho da lista
   return getListSize(photos_list);
 }
-
 
 static int peer_identify_photo(int fd, List * photos_list, Photo ** photo){
   uint32_t id;
@@ -60,7 +107,8 @@ static int peer_identify_photo(int fd, List * photos_list, Photo ** photo){
 int peer_add_photo_client(int fd, List * photos_list){
   Photo * new_photo;
   FILE * image_file;
-  unsigned char buffer[CHUNK_SIZE];
+	char * image_file_name;
+  char buffer[CHUNK_SIZE];
   int check, size, current_chunk;
 
   // Informação enviada:
@@ -87,19 +135,33 @@ int peer_add_photo_client(int fd, List * photos_list){
 	if (check == ERROR) return ERROR;
 
   // Recebe tamanho da imagem
-  check = myRead(fd, &size, sizeof(int), TIMEOUT);
+  check = myRead(fd, &new_photo->size, sizeof(int), TIMEOUT);
   if (check == ERROR || size <= 0) return ERROR;
 
-	new_photo->size = size;
-
   // Escreve imagem recebida para ficheiro
-  image_file = fopen(strcat(PEER_FOLDER_PREFIX, new_photo->file_name), "wb");
+	image_file_name = getPhotoFileName(new_photo);
+  image_file = fopen(image_file_name, "wb");
+	free(image_file_name);
+	if (image_file == NULL) return ERROR;
+
+	size = new_photo->size;
   current_chunk = size > CHUNK_SIZE ? CHUNK_SIZE : size;
   while(size > 0 && (check = myRead(fd, buffer, current_chunk, TIMEOUT)) != ERROR){
     fwrite(buffer, sizeof(char), current_chunk, image_file);
+
+		size -= current_chunk;
     current_chunk = size > CHUNK_SIZE ? CHUNK_SIZE : size;
   }
+	fclose(image_file);
   if (check == ERROR) return ERROR;
+
+
+	// Insere foto na lista
+	insertListItem(photos_list, new_photo, &new_photo->id);
+
+	// Envia id da imagem
+  check = send(fd, &new_photo->id, sizeof(uint32_t), 0);
+  if (check == -1) return ERROR;
 
   return TRUE;
 }
@@ -177,8 +239,7 @@ int peer_delete_photo(int fd, List * photos_list){
 	int check;
 
 	check = peer_identify_photo(fd, photos_list, &photo);
-  if (check == ERROR) return ERROR;
-	if (check == FALSE) return FALSE;
+  if (check == ERROR || check == FALSE) return check;
 
 	removeListItem(photos_list, &photo->id);
 	freePhoto(photo);
@@ -209,6 +270,7 @@ int peer_get_photo_name(int fd, List * photos_list){
 
 int peer_get_photo(int fd, List * photos_list){
 	FILE * image_file;
+	char * image_file_name;
 	Photo * photo;
 	char buffer[CHUNK_SIZE];
 	int size, check, nbytes;
@@ -218,7 +280,9 @@ int peer_get_photo(int fd, List * photos_list){
 	if (size == FALSE) return FALSE;
 
 	// Abre ficheiro em modo leitura
-	image_file = fopen(strcat(PEER_FOLDER_PREFIX, photo->file_name), "rb");
+	image_file_name = getPhotoFileName(photo);
+	image_file = fopen(image_file_name, "rb");
+	free(image_file_name);
 	if (image_file == NULL) return ERROR;
 
 	// Confirma se a imagem não sofreu alterações no servidor
@@ -231,6 +295,8 @@ int peer_get_photo(int fd, List * photos_list){
 		check = send(fd, buffer, nbytes, 0);
 		if (check == -1) return 0;
 	}
+
+	fclose(image_file);
 
 	return TRUE;
 }

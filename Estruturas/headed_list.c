@@ -56,7 +56,7 @@ void insertListItem(List * list, void * item, void * item_id){
   list->n_elements ++;
 
   // Verifica se deve introduzir no inicio da lista
-  if(list->compareItemWithId(list->first_node, item_id) != SMALLER){
+  if(list->first_node == NULL || list->compareItemWithId(list->first_node, item_id) != SMALLER){
     // mutex aqui
     new_list_node->next = list->first_node;
     list->first_node = new_list_node;
@@ -86,6 +86,7 @@ void * removeListItem(List * list, void * id){
     item = aux->item;
 
     // mutex aqui
+    list->n_elements --;
     list->first_node = aux->next;
     free(aux);
 
@@ -102,6 +103,7 @@ void * removeListItem(List * list, void * id){
     item = aux->item;
 
     // mutex aqui
+    list->n_elements --;
     prev->next = aux->next;
     free(aux);
 
@@ -113,7 +115,7 @@ void * removeListItem(List * list, void * id){
 }
 void * findListItem(List * list, void * id){
   ListNode * aux = list->first_node;
-  int comparsion;
+  int comparsion = SMALLER;
 
   // Avança enquanto aux for válido e o id do elemento actual for meno que id
   // (a lista está ordenada por ordem crescente de ids)
