@@ -8,30 +8,12 @@
 #include "peer_api.h"
 #include "global.h"
 
-static int myRead(int fd, void * buf, size_t nbytes, int timeout){
-	fd_set rfds;
-	struct timeval timer;
-
-	int read_size;
-	int offset = 0;
-
-	do {
-		FD_ZERO(&rfds);
-		FD_SET(fd, &rfds);
-		timer.tv_sec = timeout;
-
-		select(fd + 1, &rfds, NULL, NULL, timeout < 0 ? NULL : &timer);
-		if (!FD_ISSET(fd, &rfds)) return ERROR; // Timeout ou interrupção
-
-		read_size = read(fd, buf + offset, nbytes - offset);
-		if(read_size <= 0) return ERROR; // A ligação foi termianda ou ocorreu um erro ao ler
-
-		offset += read_size;
-
-	} while(offset != nbytes);
-
-	return TRUE;
-}
+typedef struct photo{
+	uint32_t id;
+  char * file_name;
+	int size;
+	List * keywords;
+} Photo;
 
 static char * getFileExtension(char * buffer){
 	int i;
@@ -58,8 +40,11 @@ void freePhoto(void * item){
 	unlink(image_file_name);
 	free(image_file_name);
 
+	free(photo->file_name);
+	freeList(photo->keywords);
 	free(item);
 }
+
 int comparePhotoWithPhotoId(void * a, void * id){
   if ( ((Photo *)a)->id == *(uint32_t *)id){
     return EQUAL;
@@ -74,10 +59,38 @@ int compareChar(void * a, void * b){
   return res > 0 ? GREATER : SMALLER;
 }
 
+
+static int myRead(int fd, void * buf, size_t nbytes, int timeout){
+	fd_set rfds;
+	struct timeval timer;
+
+	int read_size;
+	int offset = 0;
+
+	do {
+		FD_ZERO(&rfds);
+		FD_SET(fd, &rfds);
+		timer.tv_sec = timeout;
+
+		select(fd + 1, &rfds, NULL, NULL, timeout < 0 ? NULL : &timer);
+		if (!FD_ISSET(fd, &rfds)) return ERROR; // Timeout ou interrupção
+
+		read_size = read(fd, buf + offset, nbytes - offset);
+		if(read_size <= 0) return ERROR; // A ligação foi termianda ou ocorreu um erro ao ler
+
+		offset += read_size;
+
+	} while(offset != nbytes);
+
+	return TRUE;
+}
+
+
 int getNewPhotoID(List * photos_list){
   // Para já o novo id será o tamanho da lista
   return getListSize(photos_list);
 }
+
 
 static int peer_identify_photo(int fd, List * photos_list, Photo ** photo){
   uint32_t id;
@@ -219,6 +232,8 @@ int peer_search_photo(int fd, List * photos_list){
 		}
 	}
 
+	free(buffer);
+
 	// Envia nº de resultados
 	size = getListSize(id_list);
   check = send(fd, &size, sizeof(int), 0);
@@ -230,6 +245,8 @@ int peer_search_photo(int fd, List * photos_list){
 		check = send(fd, id, sizeof(uint32_t), 0);
 	  if (check == -1) return ERROR;
 	}
+
+	freeList(id_list);
 
 	return TRUE;
 }

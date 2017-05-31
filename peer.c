@@ -125,6 +125,7 @@ void * handleClient(void * item){
 		if (client_thread == NULL) return NULL;
 
 		free(client_thread);
+		pthread_detach(self); // Elimina os resources alocados pelo thred permitindo que não seja necessário fazer join
 	}
 
 	return NULL;
@@ -173,11 +174,12 @@ void waitClientConnection(){
 	close(fd);
 	printf("Ligação terminada!!!\n");
 
-	// Espera que todos os threads terminem
+	// Força todos os threads a terminar
 	startListIteration(client_threads_list);
 	while((client_thread = (ClientThread *) getListNextItem(client_threads_list) )!= NULL){
 		close(client_thread->fd);
 		pthread_cancel(client_thread->thread);
+		pthread_join(client_thread->thread, NULL);
 		printf("forced to close\n");
 	}
 

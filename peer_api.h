@@ -6,13 +6,6 @@
 
 #include "Estruturas/headed_list.h"
 
-typedef struct photo{
-	uint32_t id;
-  char * file_name;
-	int size;
-	List * keywords;
-} Photo;
-
 void freePhoto(void * item);
 int comparePhotoWithPhotoId(void * a, void * b);
 

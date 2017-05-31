@@ -254,8 +254,8 @@ int gallery_get_photo_name(int peer_socket, uint32_t id_photo, char ** photo_nam
 	if (check == -1) return ERROR;
 
 	// Aloca espaço necessário para armazenar a string
-	*photo_name = (char *) malloc((size + 1)*sizeof(char));
-	*photo_name[size] = '\0';
+	(*photo_name) = (char *) malloc((size + 1)*sizeof(char));
+	(*photo_name)[size] = '\0';
 
 	check = myRead(peer_socket, *photo_name, size*sizeof(char), TIMEOUT);
 	if (check == -1) return ERROR;
