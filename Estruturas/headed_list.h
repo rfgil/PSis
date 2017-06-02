@@ -2,6 +2,7 @@
 #define HEADED_LIST_H_INCLUDED
 
 typedef struct list_head List;
+typedef struct list_node ListNode;
 
 #define SMALLER -1
 #define EQUAL 0
@@ -14,8 +15,11 @@ void insertListItem(List * list, void * item, void * item_id);
 void * removeListItem(List * list, void * id);
 void * findListItem(List * list, void * id);
 
-void startListIteration(List * list);
-void * getListNextItem(List * list);
+ListNode * getFirstListNode(List * list);
+ListNode * getNextListNode(ListNode * list_node);
+void * getListNodeItem(ListNode * list_node);
+
+
 
 int getListSize(List * list);
 

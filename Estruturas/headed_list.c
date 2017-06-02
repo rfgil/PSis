@@ -2,10 +2,10 @@
 
 #include "headed_list.h"
 
-typedef struct list_node{
+struct list_node{
   void * item;
   struct list_node * next;
-} ListNode;
+} ;
 
 struct list_head{
     int n_elements;
@@ -126,22 +126,15 @@ void * findListItem(List * list, void * id){
   return comparsion == EQUAL ? aux->item : NULL;
 }
 
-
-void startListIteration(List * list){
-  list->current_node = list->first_node;
+ListNode * getFirstListNode(List * list){
+  return list->first_node;
 }
-
-void * getListNextItem(List * list){
-  void * item = NULL;
-
-  if (list->current_node != NULL){
-    item = list->current_node->item;
-    list->current_node = list->current_node->next;
-  }
-
-  return item;
+ListNode * getNextListNode(ListNode * list_node){
+  return list_node->next;
 }
-
+void * getListNodeItem(ListNode * list_node){
+  return list_node->item;
+}
 
 int getListSize(List * list){
   return list->n_elements;
