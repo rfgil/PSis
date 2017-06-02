@@ -30,6 +30,7 @@ void setInterruptionHandler(){
 // Variáveis globais
 List * peer_list;
 int CURRENT_PEER_ID = 0;
+uint32_t CURRENT_IMAGE_ID = 0;
 
 typedef struct peer_info{
 	int id;
@@ -157,6 +158,11 @@ void * handlePeersUDP(void * arg){
 				serializeInteger(fd, peer_addr, CURRENT_PEER_ID++);
 				break;
 
+			case MSG_GATEWAY_NEW_PHOTO_ID:
+				printf("Pedido de novo ID para foto\n");
+				serializeUint32(fd, peer_addr, CURRENT_IMAGE_ID++);
+				break;
+
 			case MSG_GATEWAY_PEER_INFO: // Novo Peer!
 				printf("Novo peer...\n");
 
@@ -187,12 +193,12 @@ void * handlePeersUDP(void * arg){
 	return NULL;
 }
 
-void sendPeerList(int fd){
+void sendPeerList(int fd, int peer_id){
 	ListNode * current_node;
 	PeerInfo * peer;
 	int size;
 
-	size  = getListSize(peer_list);
+	size  = getListSize(peer_list) - 1; // O próprio peer não é contabilizado
 	if (send(fd, &size, sizeof(int), 0) == ERROR) return;
 
 	current_node = getFirstListNode(peer_list);
@@ -200,23 +206,29 @@ void sendPeerList(int fd){
 		peer = getListNodeItem(current_node);
 		current_node = getNextListNode(current_node);
 
+		if (peer->id == peer_id) continue; //Evita enviar o próprio peer
+
 		if ( send(fd, &peer->tcp_port, sizeof(in_port_t), 0)  == ERROR) return;
 		if ( send(fd, &peer->addr, sizeof(struct in_addr), 0) == ERROR) return;
 	}
 }
 
 void handlePeersTCP(int fd){
-	int new_fd, check;
+	int new_fd, peer_id;
 
-	check = listen(fd, MAX_QUEUED_CONNECTIONS) != -1;
-	if (check == -1) { perror(NULL); close(fd); return;}
+	//check = listen(fd, MAX_QUEUED_CONNECTIONS) != -1;
+	//if (check == -1) { perror(NULL); close(fd); return;}
 
 	while(!isInterrupted){
 		new_fd = accept(fd, NULL, NULL);
 		if (isInterrupted) break;
 		if (new_fd == -1) { perror(NULL); close(fd); return;}; // Continua à espera de novas liações em caso de erro
 
-		sendPeerList(new_fd);
+		printf("Sending all available peers...\n");
+
+		TCPRead(new_fd, &peer_id, sizeof(int), TIMEOUT);
+		sendPeerList(new_fd, peer_id);
+
 		close(new_fd);
 	}
 

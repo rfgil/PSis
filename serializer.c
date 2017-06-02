@@ -175,6 +175,22 @@ int deserializeInteger(int fd, int * integer){
 	return TRUE;
 }
 
+int   serializeUint32(int fd, struct sockaddr_in destination, uint32_t integer){
+	return sendto(fd, &integer, sizeof(uint32_t), 0, (struct sockaddr *) &destination, sizeof(destination));
+}
+int deserializeUint32(int fd, uint32_t * integer){
+	int check;
+	char * buffer = malloc(sizeof(uint32_t));
+
+	check = UDPRead(fd, buffer, sizeof(uint32_t), TIMEOUT);
+	if (check == ERROR || check == FALSE) return check;
+
+	memcpy(integer, buffer, sizeof(uint32_t));
+	free(buffer);
+
+	return TRUE;
+}
+
 // ---------------- CLIENT / GATEWAY messages ----------------
 
 // ---------------- PEER / PEER messages ----------------

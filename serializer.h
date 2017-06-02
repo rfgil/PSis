@@ -20,4 +20,7 @@ int deserializePeerDeath(char * buffer, int * peer_id);
 int serializeInteger(int fd, struct sockaddr_in destination, int integer);
 int deserializeInteger(int fd, int * integer);
 
+int   serializeUint32(int fd, struct sockaddr_in destination, uint32_t integer);
+int deserializeUint32(int fd, uint32_t * integer);
+
 #endif

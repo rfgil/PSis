@@ -26,14 +26,14 @@
 #define UDP_RETRY_ATTEMPS 1
 
 // Identificadores das mensagens trocadas
-#define MSG_CLIENT_NEW_IMAGE 0
+#define MSG_NEW_PHOTO 0
 #define MSG_ADD_KEYWORD 1
 #define MSG_SEARCH_PHOTO 2
 #define MSG_DELETE_PHOTO 3
 #define MSG_GET_PHOTO_NAME 4
 #define MSG_GET_PHOTO 5
 
-#define MSG_REPLICA_CLIENT_NEW_IMAGE 6
+#define MSG_REPLICA_NEW_PHOTO 6
 #define MSG_REPLICA_ADD_KEYWORD 7
 #define MSG_REPLICA_DELETE_PHOTO 8
 
@@ -44,5 +44,6 @@
 #define MSG_GATEWAY_PEER_INFO 11
 #define MSG_GATEWAY_PEER_DEATH 12
 #define MSG_GATEWAY_IS_ALIVE 13
+#define MSG_GATEWAY_NEW_PHOTO_ID 14
 
 #endif

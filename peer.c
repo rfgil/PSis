@@ -16,6 +16,7 @@
 List * photos_list;
 List * client_threads_list;
 
+
 int isInterrupted = FALSE;
 void interruptionHandler(){
 	isInterrupted = TRUE;
@@ -64,7 +65,7 @@ void * handleGateway(void * arg){
 	int size, msg_id;
 	struct sockaddr_in caller_dest;
 
-	int fd = *(int *)arg;
+	int fd = *(int*)arg;
 
 	while(!isInterrupted){
 		size =  sizeof(caller_dest);
@@ -86,6 +87,7 @@ void * handleGateway(void * arg){
 
 void * handleClient(void * item){
 	int fd = *(int *) item;
+
 	int msg_id;
 	int check = TRUE;
 
@@ -94,41 +96,51 @@ void * handleClient(void * item){
 	// O servidor fica indefinadmente à espera de interação por parte do cliente
 	while(myRead(fd, &msg_id, sizeof(int)) == TRUE && check != ERROR){
 		switch (msg_id) {
-			case MSG_CLIENT_NEW_IMAGE:
+			case MSG_NEW_PHOTO:
 				printf("Pedido para adicionar foto...\n");
-				check = peer_add_photo_client(fd, photos_list);
-				if (check == ERROR) perror(NULL);
+				check = handle_new_photo(fd, photos_list);
 				break;
 
 			case MSG_ADD_KEYWORD:
-			printf("Pedido para adicionar keyword...\n");
-				check = peer_add_keyword(fd, photos_list);
-				if (check == ERROR) perror(NULL);
+				printf("Pedido para adicionar keyword...\n");
+				check = handle_add_keyword(fd, photos_list);
 				break;
 
 			case MSG_SEARCH_PHOTO:
 				printf("Pedido para procurar foto...\n");
-				check = peer_search_photo(fd, photos_list);
-				if (check == ERROR) perror(NULL);
+				check = handle_search_photo(fd, photos_list);
 				break;
 
 			case MSG_DELETE_PHOTO:
 				printf("Pedido para remover foto...\n");
-				check = peer_delete_photo(fd, photos_list);
-				if (check == ERROR) perror(NULL);
+				check = handle_delete_photo(fd, photos_list);
 				break;
 
 			case MSG_GET_PHOTO_NAME:
 				printf("Pedido para obter nome da foto...\n");
-				check = peer_get_photo_name(fd, photos_list);
-				if (check == ERROR) perror(NULL);
+				check = handle_get_photo_name(fd, photos_list);
 				break;
 
 			case MSG_GET_PHOTO:
 				printf("Pedido para obter foto...\n");
-				check = peer_get_photo(fd, photos_list);
-				if (check == ERROR) perror(NULL);
+				check = handle_get_photo(fd, photos_list);
 				break;
+
+			case MSG_REPLICA_NEW_PHOTO:
+				printf("Adicionando foto replicada...\n");
+				handle_replica_new_photo(fd, photos_list);
+				break;
+
+			case MSG_REPLICA_ADD_KEYWORD:
+				printf("Adicionando keyword replicada...\n");
+				handle_replica_add_keyword(fd, photos_list);
+				break;
+
+			case MSG_REPLICA_DELETE_PHOTO:
+				printf("Replicando removoção de foto...\n");
+				handle_replica_delete_photo(fd, photos_list);
+				break;
+
 
 			case MSG_REPLICA_ALL:
 				printf("Pedido para replicar informação...\n");
@@ -144,6 +156,8 @@ void * handleClient(void * item){
 	// Fecha a socket
 	close(fd);
 	printf("Ligação terminada!\n");
+
+	if (check == ERROR) perror(NULL);
 
 	if(!isInterrupted){
 		// Caso não tenha ocorrido uma interrupção, remove o thread da lista
@@ -221,10 +235,9 @@ int downloadPeersData(char * gateway_host, in_port_t gateway_port){
 }
 
 int main(int argc, char *argv[]){
-	int fd_udp, fd_tcp;
+	int fd_tcp, fd_udp;
 	pthread_t gateway_thread;
 
-	struct sockaddr_in gateway_sockaddr;
 	in_port_t peer_port, gateway_client_port;
 	struct in_addr peer_addr;
 
@@ -238,10 +251,13 @@ int main(int argc, char *argv[]){
 	assert(argc == 6);
 
 	// Inicializa addresses e ports em função dos argumentos
-	assert(inet_aton(argv[1], &gateway_sockaddr.sin_addr) != 0);
+	assert(inet_aton(argv[1], &GATEWAY_SOCKADDR.sin_addr) != 0);
 	gateway_client_port	= htons(atoi(argv[2]));
-	gateway_sockaddr.sin_port = htons(atoi(argv[3]));
+	GATEWAY_SOCKADDR.sin_port = htons(atoi(argv[3]));
+	GATEWAY_SOCKADDR.sin_family = AF_INET;
 
+	//inet_aton(argv[1], &global_gateway_addr);
+	//global_gateway_port = htons(atoi(argv[3]));
 
 	assert(inet_aton(argv[4], &peer_addr) != 0);
 	peer_port = htons(atoi(argv[5]));
@@ -254,7 +270,7 @@ int main(int argc, char *argv[]){
 	}
 
 	// Obtem PEER_ID
-	if (serializeInteger(fd_udp, gateway_sockaddr, MSG_GATEWAY_NEW_PEER_ID) == ERROR ||
+	if (serializeInteger(fd_udp, GATEWAY_SOCKADDR, MSG_GATEWAY_NEW_PEER_ID) == ERROR ||
 	    deserializeInteger(fd_udp, &PEER_ID) == ERROR){
 
 		printf("Can't connect to gateway\n");
@@ -274,7 +290,7 @@ int main(int argc, char *argv[]){
 	}
 
 	// Regista peer na gateway e obtem o seu ID
-	if (registerAtGateway(fd_udp, gateway_sockaddr, peer_port, peer_addr) == ERROR) {
+	if (registerAtGateway(fd_udp, GATEWAY_SOCKADDR, peer_port, peer_addr) == ERROR) {
 		close(fd_udp);
 		close(fd_tcp);
 		freeList(photos_list);
@@ -295,8 +311,7 @@ int main(int argc, char *argv[]){
 	pthread_cancel(gateway_thread);
 	pthread_join(gateway_thread, NULL);
 
-	printf("Informando gateway do término deste peer...\n");
-	unregisterAtGateway(fd_udp, gateway_sockaddr, PEER_ID);
+	unregisterAtGateway(fd_udp, GATEWAY_SOCKADDR, PEER_ID);
 
 	freeList(photos_list);
 

@@ -11,6 +11,9 @@
 
 #include "serializer.h"
 
+
+
+
 static int identify_photo_protocol(int peer_socket, uint32_t id_photo, int msg_id){
 	int check, size;
 
@@ -96,7 +99,7 @@ uint32_t gallery_add_photo(int peer_socket, char * file_name){
 	if (image_file == NULL)	return ERROR; // Nesta função o erro é 0
 
 	// Envia identificador do tipo de mensagem que será enviado
-	id = MSG_CLIENT_NEW_IMAGE;
+	id = MSG_NEW_PHOTO;
 	check = send(peer_socket, &id, sizeof(int), MSG_NOSIGNAL);
 	if (check == -1) return ERROR;
 
