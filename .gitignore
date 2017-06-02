@@ -31,3 +31,10 @@
 # Debug files
 *.dSYM/
 *.su
+
+# Custom files
+gateway
+peer
+client
+*.png
+*.jpg

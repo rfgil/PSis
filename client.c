@@ -101,8 +101,13 @@ int main(int argc, char *argv[]){
 
   assert(argc > 2);
 
+  printf("Accessing gateway...\n");
+
   fd = gallery_connect(argv[1], htons(atoi(argv[2])));
-  if (fd == ERROR) { perror(NULL); return 1; }
+  if (fd == ERROR) { printf("Can't connect to gateway\n"); perror(NULL); return 1;}
+  if (fd == FALSE) { printf("No peer is available\n"); return 1;}
+
+  printf("Connected to a peer!\n");
 
   do {
     printf("Choose command:\n"
@@ -152,7 +157,7 @@ int main(int argc, char *argv[]){
 
     if (check == ERROR){
       command = 0; // Termina aplicação
-      
+
       printf("An error occurred.\n");
       perror(NULL);
     } else {

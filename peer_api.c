@@ -7,6 +7,8 @@
 
 #include "peer_api.h"
 #include "global.h"
+#include "serializer.h"
+
 
 typedef struct photo{
 	uint32_t id;
@@ -27,7 +29,7 @@ static char * getFileExtension(char * buffer){
 
 static char * getPhotoFileName(Photo * photo){
 	char * buffer = malloc(strlen(PEER_FOLDER_PREFIX) + 17); // id_max=2^32 -> 10 caracteres, Nenhuma extensão de imagens ocupa mais de 6 caracteres, +1 para \0
-	sprintf(buffer, "%s%d%s", PEER_FOLDER_PREFIX, photo->id, getFileExtension(photo->file_name));
+	sprintf(buffer, "%s-%d_%d%s", PEER_FOLDER_PREFIX, PEER_ID, photo->id, getFileExtension(photo->file_name));
 	return buffer;
 }
 
@@ -60,31 +62,23 @@ int compareChar(void * a, void * b){
 }
 
 
-static int myRead(int fd, void * buf, size_t nbytes, int timeout){
-	fd_set rfds;
-	struct timeval timer;
+int registerAtGateway(int fd, struct sockaddr_in gateway_addr, in_port_t peer_port, struct in_addr peer_addr){
+	int check, peer_id;
 
-	int read_size;
-	int offset = 0;
+	// Serializa informação a enviar
+	check = serializePeerInfo(fd, gateway_addr, peer_port, peer_addr);
+	if (check == ERROR) return ERROR;
 
-	do {
-		FD_ZERO(&rfds);
-		FD_SET(fd, &rfds);
-		timer.tv_sec = timeout;
+	// Aguarda resposta da gateway
+	check = deserializeInteger(fd, &peer_id);
+	if (check != TRUE) return ERROR;
 
-		select(fd + 1, &rfds, NULL, NULL, timeout < 0 ? NULL : &timer);
-		if (!FD_ISSET(fd, &rfds)) return ERROR; // Timeout ou interrupção
-
-		read_size = read(fd, buf + offset, nbytes - offset);
-		if(read_size <= 0) return ERROR; // A ligação foi termianda ou ocorreu um erro ao ler
-
-		offset += read_size;
-
-	} while(offset != nbytes);
-
-	return TRUE;
+	return peer_id;
 }
 
+int unregisterAtGateway(int fd, struct sockaddr_in gateway_addr, int peer_id){
+	return serializePeerDeath(fd, gateway_addr, peer_id);
+}
 
 int getNewPhotoID(List * photos_list){
   // Para já o novo id será o tamanho da lista
@@ -102,7 +96,7 @@ static int peer_identify_photo(int fd, List * photos_list, Photo ** photo){
   // Aguarda confirmação de que a imagem existe (int)
 
   // Recebe id da foto
-  check = myRead(fd, &id, sizeof(uint32_t), TIMEOUT);
+  check = TCPRead(fd, &id, sizeof(uint32_t), TIMEOUT);
 	if (check == ERROR) return ERROR;
 
   // Procura a foto na lista
@@ -136,7 +130,7 @@ int peer_add_photo_client(int fd, List * photos_list){
   new_photo->keywords = newList(compareChar, free); // lista de chars
 
   // Recebe tamanho de file_name
-  check = myRead(fd, &size, sizeof(int), TIMEOUT);
+  check = TCPRead(fd, &size, sizeof(int), TIMEOUT);
 	if (check == ERROR) return ERROR;
 
   // Aloca espaço para armazenar file_name
@@ -144,11 +138,11 @@ int peer_add_photo_client(int fd, List * photos_list){
   new_photo->file_name[size] = '\0';
 
   // Recebe file_name
-  check = myRead(fd, new_photo->file_name, size*sizeof(char), TIMEOUT);
+  check = TCPRead(fd, new_photo->file_name, size*sizeof(char), TIMEOUT);
 	if (check == ERROR) return ERROR;
 
   // Recebe tamanho da imagem
-  check = myRead(fd, &new_photo->size, sizeof(int), TIMEOUT);
+  check = TCPRead(fd, &new_photo->size, sizeof(int), TIMEOUT);
   if (check == ERROR || size <= 0) return ERROR;
 
   // Escreve imagem recebida para ficheiro
@@ -159,7 +153,7 @@ int peer_add_photo_client(int fd, List * photos_list){
 
 	size = new_photo->size;
   current_chunk = size > CHUNK_SIZE ? CHUNK_SIZE : size;
-  while(size > 0 && (check = myRead(fd, buffer, current_chunk, TIMEOUT)) != ERROR){
+  while(size > 0 && (check = TCPRead(fd, buffer, current_chunk, TIMEOUT)) != ERROR){
     fwrite(buffer, sizeof(char), current_chunk, image_file);
 
 		size -= current_chunk;
@@ -189,14 +183,14 @@ int peer_add_keyword(int fd, List * photos_list){
 	if (check == FALSE) return FALSE;
 
   // Recebe tamanho de file_name
-  check = myRead(fd, &size, sizeof(int), TIMEOUT);
+  check = TCPRead(fd, &size, sizeof(int), TIMEOUT);
   if (check == ERROR) return ERROR;
 
   buffer = (char *) malloc((size + 1)*sizeof(char));
   buffer[size]  = '\0';
 
   // Recebe file_name
-  check = myRead(fd, buffer, size*sizeof(char), TIMEOUT);
+  check = TCPRead(fd, buffer, size*sizeof(char), TIMEOUT);
   if (check == ERROR) return ERROR;
 
   insertListItem(photo->keywords, buffer, buffer); // A string é o elemento a armazenar e simultaneamente o id
@@ -212,14 +206,14 @@ int peer_search_photo(int fd, List * photos_list){
 	uint32_t * id;
 
 	// Recebe tamanho de keyword
-  check = myRead(fd, &size, sizeof(int), TIMEOUT);
+  check = TCPRead(fd, &size, sizeof(int), TIMEOUT);
   if (check == ERROR) return ERROR;
 
 	buffer = (char *) malloc((size + 1)*sizeof(char));
 	buffer[size] = '\0';
 
 	// Recebe keyword
-  check = myRead(fd, buffer, size*sizeof(char), TIMEOUT);
+  check = TCPRead(fd, buffer, size*sizeof(char), TIMEOUT);
   if (check == ERROR) return ERROR;
 
 	// Iteração em todas as fotos da lista

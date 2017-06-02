@@ -15,12 +15,15 @@
 
 #define MAX_MSG_LEN 100
 
-#define TIMEOUT -1 //segundos
-//#define TIME_OUT 10
+#define MAX_QUEUED_CONNECTIONS 128
 
-#define PEER_FOLDER_PREFIX "peer_"
+#define TIMEOUT 5 //-1 //segundos
+
+#define PEER_FOLDER_PREFIX "peer"
 
 #define CHUNK_SIZE 512 // Nº de bytes da imagem lidos/escritos simultaneamente
+
+#define UDP_RETRY_ATTEMPS 3
 
 // Identificadores das mensagens trocadas
 #define MSG_CLIENT_NEW_IMAGE 0
@@ -30,5 +33,12 @@
 #define MSG_DELETE_PHOTO 4
 #define MSG_GET_PHOTO_NAME 5
 #define MSG_GET_PHOTO 6
+
+
+// Mensagens Peer <-> Gateway
+#define MSG_GATEWAY_PEER_INFO 0
+#define MSG_GATEWAY_PEER_DEATH 1
+#define MSG_GATEWAY_IS_ALIVE 2
+
 
 #endif

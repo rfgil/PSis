@@ -9,30 +9,7 @@
 #include "global.h"
 #include "api.h"
 
-static int myRead(int fd, void * buf, size_t nbytes, int timeout){
-	fd_set rfds;
-	struct timeval timer;
-
-	int read_size;
-	int offset = 0;
-
-	do {
-		FD_ZERO(&rfds);
-		FD_SET(fd, &rfds);
-		timer.tv_sec = timeout;
-
-		select(fd + 1, &rfds, NULL, NULL, timeout < 0 ? NULL : &timer);
-		if (!FD_ISSET(fd, &rfds)) return ERROR; // Timeout ou interrupção
-
-		read_size = read(fd, buf + offset, nbytes - offset);
-		if(read_size <= 0) return ERROR; // A ligação foi termianda ou ocorreu um erro ao ler
-
-		offset += read_size;
-
-	} while(offset != nbytes);
-
-	return TRUE;
-}
+#include "serializer.h"
 
 static int identify_photo_protocol(int peer_socket, uint32_t id_photo, int msg_id){
 	int check, size;
@@ -51,77 +28,53 @@ static int identify_photo_protocol(int peer_socket, uint32_t id_photo, int msg_i
 	if (check == -1) return ERROR;
 
 	// Recebe o tamanho em bytes da foto identificada
-	check = myRead(peer_socket, &size, sizeof(int), TIMEOUT);
+	check = TCPRead(peer_socket, &size, sizeof(int), TIMEOUT);
 	if (check == ERROR) return ERROR;
 
 	return size;
 }
 
 int gallery_connect(char * host, in_port_t port){
+	struct sockaddr_in addr, peer_addr;
+	int fd_tcp, fd_udp, check;
+	char buffer[CHUNK_SIZE];
 
-	/*
-	GatewayMsg * msg;
-	struct sockaddr_in addr;
-
-	fd_set rfds;
-	struct timeval timeout;
-
-	int fd_udp, fd_tcp, err;
-	char * buffer;
-
-	buffer = malloc(sizeof(GatewayMsg));
-
-	// INICIALIZA SOCKET CLIENT UDP
 	fd_udp = socket(AF_INET, SOCK_DGRAM, 0);
-	assert(fd_udp != -1);
+	if (fd_udp == -1) return ERROR;
 
 	// Define addr da gateway
 	addr.sin_family = AF_INET;
 	addr.sin_port = port;
-	err = inet_aton(host, &addr.sin_addr);
-	assert(err != 0);
+	check = inet_aton(host, &addr.sin_addr);
+	if (check == 0) return ERROR;
 
 	// Envia mensagem para a gateway (1 byte qualquer)
-	err = sendto(fd_udp, buffer, 1, 0, (struct sockaddr *) &addr, sizeof(addr));
-	assert(err != -1);
+	check = sendto(fd_udp, &check, 1, 0, (struct sockaddr *) &addr, sizeof(addr));
+	if (check == 0) return ERROR;
 
-	// TIME_OUT
-	FD_ZERO(&rfds);
-	FD_SET(fd_udp, &rfds);
-	timeout.tv_sec = TIMEOUT;
+	// Define addr do peer em função da resposta da gateway
+	check = UDPRead(fd_udp, buffer, sizeof(int) + sizeof(in_port_t) + sizeof(struct in_addr), TIMEOUT);
+	if (check == FALSE){
+		// Recebeu algo, mas não com a dimensão prevista -> ERROR ou FALSE: ocorreu um erro ou não há peers disponiveis respetivamente
+		memcpy(&check, buffer, sizeof(int));
+		return check;
+	} else if (check == ERROR) return ERROR;
 
-	err = select(fd_udp + 1, &rfds, (fd_set *) NULL, (fd_set *) NULL, &timeout);
-	assert(err != -1);
+	peer_addr.sin_family = AF_INET;
+	check = deserializePeerInfo(buffer, &peer_addr.sin_port, &peer_addr.sin_addr);
+	if (check != TRUE) return ERROR; // Significa que a mensagem não tinha o id previsto
 
-	if (!FD_ISSET(fd_udp, &rfds)){
-		return -1; // Timeout (Assum que não é possivel aceder à gateway)
-	}
+	printf("Found peer at %s@%d\n", inet_ntoa(peer_addr.sin_addr), ntohs(peer_addr.sin_port));
 
-	// Recebe resposta da gateway
-	recvfrom(fd_udp, buffer, sizeof(GatewayMsg), 0, (struct sockaddr *)&addr, (socklen_t *)&err);
-	msg = deserializeGatewayMsg(buffer);
-
-	if (msg->type == 0){
-		return 0; // No peer is available
-	}
-	*/
-	struct sockaddr_in addr;
-	int fd_tcp, check;
-
-	// Assume que os argumentos dizem respeito ao peer
-	// Na verdade os argumentos referem-se à gateway!!!
+	// Fecha socket udp
+	close(fd_udp);
 
 	// Abrir socket tcp
 	fd_tcp = socket(AF_INET, SOCK_STREAM, 0);
-	assert(fd_tcp != -1);
+	if (fd_tcp == -1) return ERROR;
 
-	// Define addr do peer
-	addr.sin_family = AF_INET;
-	addr.sin_port = port; // Este valor deve ser obtido pela gateway
-	check = inet_aton(host, &addr.sin_addr); // Este valor deve ser obtido pela gateway
-	if (check == 0) return ERROR;
-
-	check = connect(fd_tcp, (struct sockaddr *) &addr, sizeof(struct sockaddr_in));
+	// Conecta-se ao peer
+	check = connect(fd_tcp, (struct sockaddr *) &peer_addr, sizeof(struct sockaddr_in));
 	if (check == -1) return ERROR;
 
 	return fd_tcp;
@@ -172,7 +125,7 @@ uint32_t gallery_add_photo(int peer_socket, char * file_name){
 	fclose(image_file);
 
 	// Recebe id da imagem
-	check = myRead(peer_socket, &id, sizeof(int), TIMEOUT);
+	check = TCPRead(peer_socket, &id, sizeof(int), TIMEOUT);
 	if (check == -1) return ERROR;
 
 	return id;
@@ -218,7 +171,7 @@ int gallery_search_photo(int peer_socket, char * keyword, uint32_t ** id_photos)
 	if (check == -1) return ERROR;
 
 	// Recebe numero de ids que vai receber
-	check = myRead(peer_socket, &photos_count, sizeof(int), TIMEOUT);
+	check = TCPRead(peer_socket, &photos_count, sizeof(int), TIMEOUT);
 	if (check == -1) return ERROR;
 
 	// Aloca espaço para o vetor de ids
@@ -226,7 +179,7 @@ int gallery_search_photo(int peer_socket, char * keyword, uint32_t ** id_photos)
 
 	// Recebe os vários ids
 	for(i = 0; i<photos_count; i++){
-		check = myRead(peer_socket, &(*id_photos[i]), sizeof(uint32_t), TIMEOUT);
+		check = TCPRead(peer_socket, &(*id_photos[i]), sizeof(uint32_t), TIMEOUT);
 		if (check == -1) return ERROR;
 	}
 
@@ -250,14 +203,14 @@ int gallery_get_photo_name(int peer_socket, uint32_t id_photo, char ** photo_nam
 	if (check == FALSE || check == ERROR) return check;
 
 	// Recebe tamanho da string file_name
-	check = myRead(peer_socket, &size, sizeof(int), TIMEOUT);
+	check = TCPRead(peer_socket, &size, sizeof(int), TIMEOUT);
 	if (check == -1) return ERROR;
 
 	// Aloca espaço necessário para armazenar a string
 	(*photo_name) = (char *) malloc((size + 1)*sizeof(char));
 	(*photo_name)[size] = '\0';
 
-	check = myRead(peer_socket, *photo_name, size*sizeof(char), TIMEOUT);
+	check = TCPRead(peer_socket, *photo_name, size*sizeof(char), TIMEOUT);
 	if (check == -1) return ERROR;
 
 	return TRUE;
@@ -278,7 +231,7 @@ int gallery_get_photo(int peer_socket, uint32_t id_photo, char *file_name) {
 	while(size > 0){
 		read_chunck_size = size > CHUNK_SIZE ? CHUNK_SIZE : size;
 
-		check = myRead(peer_socket, &buffer, read_chunck_size, TIMEOUT);
+		check = TCPRead(peer_socket, &buffer, read_chunck_size, TIMEOUT);
 		if (check == -1) return ERROR;
 
 		fwrite(buffer, sizeof(char), read_chunck_size, file);
