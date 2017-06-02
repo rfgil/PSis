@@ -24,4 +24,7 @@ int peer_delete_photo(int fd, List * photos_list);
 int peer_get_photo_name(int fd, List * photos_list);
 int peer_get_photo(int fd, List * photos_list);
 
+int sendPhotoList(int fd, List * photos_list);
+int receivePhotoList(int fd, List ** photo_list);
+
 #endif

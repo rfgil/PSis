@@ -19,8 +19,6 @@ ListNode * getFirstListNode(List * list);
 ListNode * getNextListNode(ListNode * list_node);
 void * getListNodeItem(ListNode * list_node);
 
-
-
 int getListSize(List * list);
 
 #endif

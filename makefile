@@ -3,11 +3,13 @@ CFLAGS=-Wall -g -pthread
 DEPS = global.h
 PROGRAMS = client peer gateway
 
+default: client peer gateway
+
 client: client.o api.o serializer.o
 	$(CC) -o client client.o api.o serializer.o $(CFLAGS)
 
-peer: peer.o serializer.o peer_api.o Estruturas/headed_list.o
-	$(CC) -o peer peer.o serializer.o peer_api.o Estruturas/headed_list.o  $(CFLAGS)
+peer: peer.o serializer.o peer_api.o api.o Estruturas/headed_list.o
+	$(CC) -o peer peer.o serializer.o peer_api.o api.o Estruturas/headed_list.o  $(CFLAGS)
 
 gateway: gateway.o Estruturas/headed_list.o serializer.o
 	$(CC) -o gateway gateway.o Estruturas/headed_list.o serializer.o $(CFLAGS)
@@ -22,8 +24,8 @@ clean:
 
 
 run_peer: peer
-	sudo ./peer 127.0.0.1 2000 127.0.0.1 4000
- #sudo ./peer 'addr_gateway' 'port_gateway' 'addr_peer' 'port_peer'
+	sudo ./peer 127.0.0.1 1000 2000 127.0.0.1 4000
+ #sudo ./peer 'addr_gateway' 'client_gateway_port' 'peer_gateway_port' 'addr_peer' 'port_peer'
 
 run_client: client
 	./client 127.0.0.1 1000

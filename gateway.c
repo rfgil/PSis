@@ -74,18 +74,24 @@ int isPeerAlive(int fd, PeerInfo * peer){
 }
 
 PeerInfo * getAvailablePeer(int fd){
+	ListNode * current_node;
 	PeerInfo * best_peer;
 	PeerInfo * current_peer;
 
 	do {
-		startListIteration(peer_list);
-		best_peer = getListNextItem(peer_list);
-		while((current_peer = getListNextItem(peer_list)) != NULL){
-			// Escolhe o melhor servidor em função do número de ligações de cada um
+		current_node = getFirstListNode(peer_list);
+		best_peer = getListNodeItem(current_node); // best_peer começa por ser o primeiro elemento da lista
+
+		current_node = getNextListNode(current_node); // current_node o segundo elemento da lista
+		while(current_node != NULL){
+			current_peer = getListNodeItem(current_node);
+			current_node = getNextListNode(current_node); // Iteração pela lista com a variavel current_node
+
 			if (current_peer->n_connections < best_peer->n_connections){
 				best_peer = current_peer;
 			}
 		}
+
 	} while(best_peer != NULL && isPeerAlive(fd, best_peer) != TRUE);
 
 	 return best_peer; // Pode ser NULL, caso não existam servidores na lista
@@ -115,8 +121,7 @@ void * handleClients(void * arg){
 		// Obtem peer disponivel e serializa a sua informação
 		peer = getAvailablePeer(fd);
 		if (peer != NULL){
-			serializePeerInfo(fd, client_addr, peer->tcp_port, peer->addr);
-
+			serializePeerInfo(fd, client_addr, peer->id, peer->tcp_port, peer->addr);
 			printf("Indicando peer com id %d em %s@%d\n", peer->id, inet_ntoa(peer->addr), (int) ntohs(peer->tcp_port));
 
 		} else {
@@ -147,21 +152,26 @@ void * handlePeersUDP(void * arg){
 		memcpy(&msg_id, buffer, sizeof(int));
 
 		switch(msg_id){
+			case MSG_GATEWAY_NEW_PEER_ID:
+				printf("Pedido de novo ID para peer\n");
+				serializeInteger(fd, peer_addr, CURRENT_PEER_ID++);
+				break;
+
 			case MSG_GATEWAY_PEER_INFO: // Novo Peer!
 				printf("Novo peer...\n");
 
 				// Aloca nova estrutura que representa o servidor
 				peer = (PeerInfo *) malloc(sizeof(PeerInfo));
 
-				peer->id = CURRENT_PEER_ID++;
 				peer->n_connections = 0;
 				peer->udp_port = peer_addr.sin_port; // Neste momento a gateway foi contactada via socket UDP do peer
 
-				if (deserializePeerInfo(buffer, &peer->tcp_port, &peer->addr) == TRUE){
+				if (deserializePeerInfo(buffer, &peer->id, &peer->tcp_port, &peer->addr) == TRUE){
 					insertListItem(peer_list, peer, &peer->id); // Insere na lista de servidores
-					serializeInteger(fd, peer_addr, peer->id); // Responde ao peer com o id que lhe foi atribuído
+
+					serializeInteger(fd, peer_addr, TRUE); // Confirma que o peer foi inserido
 				} else {
-					serializeInteger(fd, peer_addr, ERROR);
+					serializeInteger(fd, peer_addr, ERROR); // Informa o peer que ocorreu um erro na sua inserção
 				}
 				break;
 
@@ -178,42 +188,21 @@ void * handlePeersUDP(void * arg){
 }
 
 void sendPeerList(int fd){
+	ListNode * current_node;
 	PeerInfo * peer;
-	startListIteration(peer_list);
-
-	int size, check, offset;
-	int current_chunk, nbytes_per_peer;
-	int total_bytes;
-
-	char buffer[CHUNK_SIZE];
+	int size;
 
 	size  = getListSize(peer_list);
+	if (send(fd, &size, sizeof(int), 0) == ERROR) return;
 
-	check = send(fd, &size, sizeof(int), 0);
-	if (check == -1) return;
+	current_node = getFirstListNode(peer_list);
+	while(current_node != NULL){
+		peer = getListNodeItem(current_node);
+		current_node = getNextListNode(current_node);
 
-	nbytes_per_peer = sizeof(in_port_t) + sizeof(struct in_addr);
-	total_bytes = size * nbytes_per_peer;
-
-	startListIteration(peer_list);
-	do {
-		offset = 0;
-		current_chunk = total_bytes > CHUNK_SIZE ? CHUNK_SIZE : total_bytes;
-
-		// Enquanto houver peers e espaço no buffer
-		while((peer = getListNextItem(peer_list)) != NULL && offset + nbytes_per_peer < current_chunk){
-			memcpy(buffer + offset, &peer->tcp_port, sizeof(in_port_t));
-			offset += sizeof(in_port_t);
-			memcpy(buffer + offset, &peer->addr, sizeof(struct in_addr));
-			offset += sizeof(struct in_addr);
-		}
-
-		check = send(fd, buffer, offset*sizeof(char), 0);
-		if (check == -1) return;
-
-		total_bytes -= current_chunk;
-	} while(total_bytes > 0);
-
+		if ( send(fd, &peer->tcp_port, sizeof(in_port_t), 0)  == ERROR) return;
+		if ( send(fd, &peer->addr, sizeof(struct in_addr), 0) == ERROR) return;
+	}
 }
 
 void handlePeersTCP(int fd){

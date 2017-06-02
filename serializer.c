@@ -5,6 +5,9 @@
 #include "global.h"
 #include "serializer.h"
 
+#include <stdio.h>
+
+
 // Criação de sockets
 static int getBindedSocket(int socket_type, in_port_t port, struct in_addr addr){
 	int fd;
@@ -48,6 +51,7 @@ int TCPRead(int fd, void * buf, size_t nbytes, int timeout){
 	do {
 		FD_ZERO(&rfds);
 		FD_SET(fd, &rfds);
+		memset(&timer, 0, sizeof(struct timeval));
 		timer.tv_sec = timeout;
 
 		select(fd + 1, &rfds, NULL, NULL, timeout < 0 ? NULL : &timer);
@@ -72,6 +76,7 @@ int UDPRead(int fd, void * buf, size_t nbytes, int timeout){
 	do {
 		FD_ZERO(&rfds);
 		FD_SET(fd, &rfds);
+		memset(&timer, 0, sizeof(struct timeval));
 		timer.tv_sec = timeout;
 
 		select(fd + 1, &rfds, NULL, NULL, &timer);
@@ -96,25 +101,27 @@ int UDPRead(int fd, void * buf, size_t nbytes, int timeout){
 // ---------------- PEER / GATEWAY messages ----------------
 // Peer pretende registar-se na gateway (Peer -> Gateway)
 // Gateway fornece um peer ao client (Gateway -> Client)
-int   serializePeerInfo(int fd, struct sockaddr_in destination, in_port_t   peer_port, struct in_addr   peer_addr){
+int   serializePeerInfo(int fd, struct sockaddr_in destination, int peer_id, in_port_t   peer_port, struct in_addr peer_addr){
 	char * buffer;
 	int msg_id, offset;
 
   offset = 0;
   msg_id = MSG_GATEWAY_PEER_INFO;
 
-	buffer = (char *) malloc(sizeof(int) + sizeof(in_port_t) + sizeof(struct in_addr));
+	buffer = (char *) malloc(2*sizeof(int) + sizeof(in_port_t) + sizeof(struct in_addr));
 
   memcpy(buffer + offset, &msg_id, sizeof(int));
   offset += sizeof(int);
+	memcpy(buffer + offset, &peer_id, sizeof(int));
+	offset += sizeof(int);
   memcpy(buffer + offset, &peer_port, sizeof(in_port_t));
   offset += sizeof(in_port_t);
   memcpy(buffer + offset, &peer_addr, sizeof(struct in_addr));
-  offset += sizeof(struct in_addr);
+	offset += sizeof(struct in_addr);
 
   return sendto(fd, buffer, offset, 0, (struct sockaddr *) &destination, sizeof(destination));
 }
-int deserializePeerInfo(char * buffer, in_port_t * peer_port, struct in_addr * peer_addr){
+int deserializePeerInfo(char * buffer, int * peer_id, in_port_t * peer_port, struct in_addr * peer_addr){
 	int msg_id, offset;
 
 	memcpy(&msg_id, buffer, sizeof(int));
@@ -122,6 +129,8 @@ int deserializePeerInfo(char * buffer, in_port_t * peer_port, struct in_addr * p
 	// Lança erro se a mensagem não tinha o id previsto
 
 	offset = sizeof(int);
+	memcpy(peer_id, buffer + offset, sizeof(int));
+	offset += sizeof(int);
   memcpy(peer_port, buffer + offset, sizeof(in_port_t));
   offset += sizeof(in_port_t);
   memcpy(peer_addr, buffer + offset, sizeof(struct in_addr));
@@ -166,6 +175,6 @@ int deserializeInteger(int fd, int * integer){
 	return TRUE;
 }
 
-
-
 // ---------------- CLIENT / GATEWAY messages ----------------
+
+// ---------------- PEER / PEER messages ----------------

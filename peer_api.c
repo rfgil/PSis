@@ -9,13 +9,13 @@
 #include "global.h"
 #include "serializer.h"
 
-
 typedef struct photo{
 	uint32_t id;
   char * file_name;
 	int size;
 	List * keywords;
 } Photo;
+
 
 static char * getFileExtension(char * buffer){
 	int i;
@@ -27,9 +27,13 @@ static char * getFileExtension(char * buffer){
 	return buffer;
 }
 
-static char * getPhotoFileName(Photo * photo){
-	char * buffer = malloc(strlen(PEER_FOLDER_PREFIX) + 17); // id_max=2^32 -> 10 caracteres, Nenhuma extensão de imagens ocupa mais de 6 caracteres, +1 para \0
-	sprintf(buffer, "%s-%d_%d%s", PEER_FOLDER_PREFIX, PEER_ID, photo->id, getFileExtension(photo->file_name));
+static char * getPhotoFileName(Photo * photo, char * buffer){
+	if (buffer == NULL){
+		buffer = malloc(strlen(PEER_FOLDER_PREFIX) + 30);
+		// id_max=2^32 -> 10 caracteres, Nenhuma extensão de imagens ocupa mais de 6 caracteres, +1 para \0
+	}
+
+	sprintf(buffer, "%s(%d)%d%s", PEER_FOLDER_PREFIX, PEER_ID, photo->id, getFileExtension(photo->file_name));
 	return buffer;
 }
 
@@ -38,7 +42,7 @@ void freePhoto(void * item){
 	char * image_file_name;
 
 	// Apaga ficheiro da imagem
-	image_file_name = getPhotoFileName(photo);
+	image_file_name = getPhotoFileName(photo, NULL);
 	unlink(image_file_name);
 	free(image_file_name);
 
@@ -63,17 +67,16 @@ int compareChar(void * a, void * b){
 
 
 int registerAtGateway(int fd, struct sockaddr_in gateway_addr, in_port_t peer_port, struct in_addr peer_addr){
-	int check, peer_id;
+	int check;
 
 	// Serializa informação a enviar
-	check = serializePeerInfo(fd, gateway_addr, peer_port, peer_addr);
+	check = serializePeerInfo(fd, gateway_addr, PEER_ID, peer_port, peer_addr);
 	if (check == ERROR) return ERROR;
 
 	// Aguarda resposta da gateway
-	check = deserializeInteger(fd, &peer_id);
-	if (check != TRUE) return ERROR;
+	if ( deserializeInteger(fd, &check) != TRUE) return ERROR;
 
-	return peer_id;
+	return check;
 }
 
 int unregisterAtGateway(int fd, struct sockaddr_in gateway_addr, int peer_id){
@@ -146,7 +149,7 @@ int peer_add_photo_client(int fd, List * photos_list){
   if (check == ERROR || size <= 0) return ERROR;
 
   // Escreve imagem recebida para ficheiro
-	image_file_name = getPhotoFileName(new_photo);
+	image_file_name = getPhotoFileName(new_photo, NULL);
   image_file = fopen(image_file_name, "wb");
 	free(image_file_name);
 	if (image_file == NULL) return ERROR;
@@ -201,6 +204,7 @@ int peer_add_keyword(int fd, List * photos_list){
 int peer_search_photo(int fd, List * photos_list){
 	Photo * photo;
 	List * id_list;
+	ListNode * current_node;
 	char * buffer;
 	int size, check;
 	uint32_t * id;
@@ -218,9 +222,12 @@ int peer_search_photo(int fd, List * photos_list){
 
 	// Iteração em todas as fotos da lista
 	id_list = newList(NULL, NULL);
-	startListIteration(photos_list);
-	while((photo = (Photo *) getListNextItem(photos_list)) != NULL){
-		// Procura foto com id igual à keyword recebida
+
+	current_node = getFirstListNode(photos_list);
+	while(current_node != NULL){
+		photo = (Photo *) getListNodeItem(current_node);
+		current_node = getNextListNode(current_node);
+
 		if (findListItem(photo->keywords, buffer) != NULL){
 			insertListItem(id_list, &photo->id, NULL);
 		}
@@ -234,10 +241,12 @@ int peer_search_photo(int fd, List * photos_list){
   if (check == -1) return ERROR;
 
 	// Envia os ids das fotos encontradas
-	startListIteration(id_list);
-	while((id = (uint32_t *) getListNextItem(id_list)) != NULL){
-		check = send(fd, id, sizeof(uint32_t), 0);
-	  if (check == -1) return ERROR;
+	current_node = getFirstListNode(id_list);
+	while(current_node != NULL){
+		id = getListNodeItem(current_node);
+		current_node = getNextListNode(current_node);
+
+		if ( send(fd, id, sizeof(uint32_t), 0) == ERROR) return ERROR;
 	}
 
 	freeList(id_list);
@@ -291,7 +300,7 @@ int peer_get_photo(int fd, List * photos_list){
 	if (size == FALSE) return FALSE;
 
 	// Abre ficheiro em modo leitura
-	image_file_name = getPhotoFileName(photo);
+	image_file_name = getPhotoFileName(photo, NULL);
 	image_file = fopen(image_file_name, "rb");
 	free(image_file_name);
 	if (image_file == NULL) return ERROR;
@@ -308,6 +317,129 @@ int peer_get_photo(int fd, List * photos_list){
 	}
 
 	fclose(image_file);
+
+	return TRUE;
+}
+
+
+int sendPhotoList(int fd, List * photos_list){
+	Photo * photo;
+	ListNode * current_node, * current_keyword;
+	FILE * image_file;
+	char * keyword, buffer[CHUNK_SIZE];
+	int size, nbytes;
+
+	size = getListSize(photos_list);
+	send(fd, &size, sizeof(int), 0);
+
+	current_node = getFirstListNode(photos_list);
+	while(current_node != NULL){
+		photo = (Photo *) getListNodeItem(current_node); // Obtem foto do current_node
+		current_node = getNextListNode(current_node); // Avança na lista
+
+		// Envia ID
+		if ( send(fd, &photo->id, sizeof(uint32_t), 0) == ERROR) return ERROR;
+
+		// Envia file_name
+		size = strlen(photo->file_name);
+		if ( send(fd, &size, sizeof(int), 0) == ERROR) return ERROR;
+		if ( send(fd, photo->file_name, size*sizeof(char), 0) == ERROR) return ERROR;
+
+		// Envia lista de keywords
+		size = getListSize(photo->keywords);
+		if ( send(fd, &size, sizeof(int), 0) == ERROR) return ERROR;
+
+		current_keyword = getFirstListNode(photo->keywords);
+		while(current_keyword != NULL){
+			keyword = (char *) getListNodeItem(current_keyword);
+
+			size = strlen(keyword);
+			if ( send(fd, &size, sizeof(int), 0) == ERROR) return ERROR;
+			if ( send(fd, keyword, size*sizeof(char), 0) == ERROR) return ERROR;
+
+			current_keyword = getNextListNode(current_keyword);
+		}
+
+		getPhotoFileName(photo, buffer);
+		image_file = fopen(buffer, "rb");
+
+		fseek(image_file, 0, SEEK_END); // Permite a leitura do tamanho da imagem
+		size = ftell(image_file);
+		if ( send(fd, &size, sizeof(int), 0) == ERROR) return ERROR;
+
+		fseek(image_file, 0, SEEK_SET); // Regressa ao inicio do ficheiro
+		while ( (nbytes = fread(buffer, sizeof(char), CHUNK_SIZE, image_file) ) > 0) {
+			if ( send(fd, buffer, nbytes, 0) == ERROR) return ERROR;
+		}
+		fclose(image_file);
+
+	}
+
+	return TRUE;
+}
+int receivePhotoList(int fd, List ** photo_list){
+	FILE * image_file;
+	Photo * photo;
+	int i, j, size, msg_id, n_photos, n_keywords;
+	char * keyword;
+	char buffer[CHUNK_SIZE];
+	int current_chunk;
+
+	*photo_list = newList(comparePhotoWithPhotoId, freePhoto);
+
+	// A socket não foi definida o que significa que não existem peers na gateway
+	// Logo só é necessário alocar a lista de fotos
+	if (fd == FALSE) return TRUE;
+
+	msg_id = MSG_REPLICA_ALL;
+	send(fd, &msg_id, sizeof(int), 0);
+
+	if ( TCPRead(fd, &n_photos, sizeof(int), TIMEOUT) == ERROR) return ERROR;
+
+	printf("Receiving %d images from existing peer...\n", n_photos);
+
+	for (i = 0; i<n_photos; i++){
+		photo = (Photo *) malloc(sizeof(Photo));
+
+		// Recebe id da foto
+		if ( TCPRead(fd, &photo->id, sizeof(uint32_t), TIMEOUT) == ERROR) return ERROR;
+
+		// Recebe file_name
+		if ( TCPRead(fd, &size, sizeof(int), TIMEOUT) == ERROR) return ERROR;
+		photo->file_name = malloc((size+1)*sizeof(char));
+		photo->file_name[size] = '\0';
+
+		if ( TCPRead(fd, photo->file_name, size*sizeof(char), TIMEOUT) == ERROR) return ERROR;
+
+		// Recebe lista de keywords
+		photo->keywords = newList(compareChar, free);
+		if ( TCPRead(fd, &n_keywords, sizeof(int), TIMEOUT) == ERROR) return ERROR;
+		for(j = 0; j<n_keywords; j++){
+			if ( TCPRead(fd, &size, sizeof(int), TIMEOUT) == ERROR) return ERROR;
+			keyword = malloc((size+1)*sizeof(char));
+			keyword[size] = '\0';
+
+			if ( TCPRead(fd, keyword, size*sizeof(char), TIMEOUT) == ERROR) return ERROR;
+
+			insertListItem(photo->keywords, keyword, keyword);
+		}
+
+		// Recebe imagem
+		if ( TCPRead(fd, &photo->size, sizeof(int), TIMEOUT) == ERROR) return ERROR;
+	  if ( (image_file = fopen(getPhotoFileName(photo, buffer), "wb")) == NULL) return ERROR;
+
+		size = photo->size;
+	  current_chunk = size > CHUNK_SIZE ? CHUNK_SIZE : size;
+	  while(size > 0 && TCPRead(fd, buffer, current_chunk, TIMEOUT) != ERROR){
+	    fwrite(buffer, sizeof(char), current_chunk, image_file);
+
+			size -= current_chunk;
+	    current_chunk = size > CHUNK_SIZE ? CHUNK_SIZE : size;
+	  }
+		fclose(image_file);
+
+		insertListItem(*photo_list, photo, &photo->id);
+	}
 
 	return TRUE;
 }

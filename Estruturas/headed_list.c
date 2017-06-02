@@ -130,10 +130,10 @@ ListNode * getFirstListNode(List * list){
   return list->first_node;
 }
 ListNode * getNextListNode(ListNode * list_node){
-  return list_node->next;
+  return list_node == NULL ? NULL : list_node->next;
 }
 void * getListNodeItem(ListNode * list_node){
-  return list_node->item;
+  return list_node == NULL ? NULL : list_node->item;
 }
 
 int getListSize(List * list){

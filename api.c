@@ -36,7 +36,7 @@ static int identify_photo_protocol(int peer_socket, uint32_t id_photo, int msg_i
 
 int gallery_connect(char * host, in_port_t port){
 	struct sockaddr_in addr, peer_addr;
-	int fd_tcp, fd_udp, check;
+	int fd_tcp, fd_udp, check, peer_id;
 	char buffer[CHUNK_SIZE];
 
 	fd_udp = socket(AF_INET, SOCK_DGRAM, 0);
@@ -53,7 +53,7 @@ int gallery_connect(char * host, in_port_t port){
 	if (check == 0) return ERROR;
 
 	// Define addr do peer em função da resposta da gateway
-	check = UDPRead(fd_udp, buffer, sizeof(int) + sizeof(in_port_t) + sizeof(struct in_addr), TIMEOUT);
+	check = UDPRead(fd_udp, buffer, 2*sizeof(int) + sizeof(in_port_t) + sizeof(struct in_addr), TIMEOUT);
 	if (check == FALSE){
 		// Recebeu algo, mas não com a dimensão prevista -> ERROR ou FALSE: ocorreu um erro ou não há peers disponiveis respetivamente
 		memcpy(&check, buffer, sizeof(int));
@@ -61,10 +61,10 @@ int gallery_connect(char * host, in_port_t port){
 	} else if (check == ERROR) return ERROR;
 
 	peer_addr.sin_family = AF_INET;
-	check = deserializePeerInfo(buffer, &peer_addr.sin_port, &peer_addr.sin_addr);
+	check = deserializePeerInfo(buffer, &peer_id, &peer_addr.sin_port, &peer_addr.sin_addr);
 	if (check != TRUE) return ERROR; // Significa que a mensagem não tinha o id previsto
 
-	printf("Found peer at %s@%d\n", inet_ntoa(peer_addr.sin_addr), ntohs(peer_addr.sin_port));
+	printf("Found peer with id %d at %s@%d\n", peer_id, inet_ntoa(peer_addr.sin_addr), ntohs(peer_addr.sin_port));
 
 	// Fecha socket udp
 	close(fd_udp);

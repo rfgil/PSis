@@ -10,6 +10,7 @@
 
 #include "global.h"
 #include "peer_api.h"
+#include "api.h"
 #include "serializer.h"
 
 List * photos_list;
@@ -129,9 +130,13 @@ void * handleClient(void * item){
 				if (check == ERROR) perror(NULL);
 				break;
 
+			case MSG_REPLICA_ALL:
+				printf("Pedido para replicar informação...\n");
+				sendPhotoList(fd, photos_list);
+				break;
+
 			default: // Invalid message id -> termina a comunicação
 				printf("Mensagem com ID desconhecido...\n");
-				check = ERROR;
 				break;
 		}
 	}
@@ -156,8 +161,8 @@ void * handleClient(void * item){
 void waitClientConnection(int fd){
 	int new_fd;
 	ClientThread * client_thread;
+	ListNode * current_node;
 
-	photos_list = newList(comparePhotoWithPhotoId, freePhoto);
 	client_threads_list = newList(compareThread, free);
 
 	// Aguarda por novas ligações de clientes
@@ -176,31 +181,22 @@ void waitClientConnection(int fd){
 	}
 
 	// Força todos os threads a terminar
-	startListIteration(client_threads_list);
-	while((client_thread = (ClientThread *) getListNextItem(client_threads_list) )!= NULL){
+	current_node = getFirstListNode(client_threads_list);
+	while(current_node != NULL){
+		client_thread = getListNodeItem(current_node);
+		current_node = getNextListNode(current_node);
+
 		close(client_thread->fd);
 		pthread_cancel(client_thread->thread);
 		pthread_join(client_thread->thread, NULL);
 	}
 
-	// Liberta memória alocada para as listas
-	freeList(photos_list);
+	// Liberta memória alocada para aa lista de threads abertos
 	freeList(client_threads_list);
 }
 
-int getSocketsFromArguments(char *argv[], int * fd_udp, int * fd_tcp, struct sockaddr_in * gateway_addr){
-	in_port_t peer_port;
-	struct in_addr peer_addr;
 
-	// Obtem Address da socket da gateway
-	gateway_addr->sin_family = AF_INET;
-	assert(inet_aton(argv[1], &gateway_addr->sin_addr) != 0); // Garante que a address introduzida é válida
-	gateway_addr->sin_port =  htons(atoi(argv[2]));
-
-	// Obtem address e port do peer
-	assert(inet_aton(argv[3], &peer_addr) != 0); // Garante que a address introduzida é válida
-	peer_port = htons(atoi(argv[4]));
-
+int openSockets(int * fd_udp, int * fd_tcp, in_port_t peer_port, struct in_addr peer_addr){
 	// Abre sockets TCP e UDP
 	*fd_udp = getBindedUDPSocket(peer_port, peer_addr);
 	if (*fd_udp == ERROR) return ERROR;
@@ -208,29 +204,84 @@ int getSocketsFromArguments(char *argv[], int * fd_udp, int * fd_tcp, struct soc
 	*fd_tcp = getBindedTCPSocket(peer_port, peer_addr);
 	if (*fd_tcp == ERROR) return ERROR;
 
-	// Regista peer na gateway e ontem o seu ID
-	PEER_ID = registerAtGateway(*fd_udp, *gateway_addr, peer_port, peer_addr);
-	if (PEER_ID == ERROR) {
-		// Fecha as sockets
-		close(*fd_udp);
-		close(*fd_tcp);
-		printf("Error trying to regist peer at gateway\n");
-		return ERROR;
+	return TRUE;
+}
+
+int downloadPeersData(char * gateway_host, in_port_t gateway_port){
+	int fd, check;
+
+	fd = gallery_connect(gateway_host, gateway_port);
+  if (fd == ERROR) return ERROR;
+
+	if ( (check = receivePhotoList(fd, &photos_list)) == TRUE){
+		close(fd);
 	}
 
-	printf("Peer registed with id %d\n", PEER_ID);
-
-	return TRUE;
+	return check;
 }
 
 int main(int argc, char *argv[]){
 	int fd_udp, fd_tcp;
-	struct sockaddr_in gateway_addr;
 	pthread_t gateway_thread;
 
+	struct sockaddr_in gateway_sockaddr;
+	in_port_t peer_port, gateway_client_port;
+	struct in_addr peer_addr;
+
 	// São necessários 4 argumentos: address e porto da gateway e do peer
-	assert(argc == 5);
-	if ( getSocketsFromArguments(argv, &fd_udp, &fd_tcp, &gateway_addr) == ERROR) {perror(NULL); return 1;}
+	// argv[1] - gateway address
+	// argv[2] - gateway client port
+	// argv[3] - gateway peer port
+
+	// argv[4] - peer address
+	// argv[5] - peer port
+	assert(argc == 6);
+
+	// Inicializa addresses e ports em função dos argumentos
+	assert(inet_aton(argv[1], &gateway_sockaddr.sin_addr) != 0);
+	gateway_client_port	= htons(atoi(argv[2]));
+	gateway_sockaddr.sin_port = htons(atoi(argv[3]));
+
+
+	assert(inet_aton(argv[4], &peer_addr) != 0);
+	peer_port = htons(atoi(argv[5]));
+
+	// Abre sockets UDP e TCP para este peer
+	if (openSockets(&fd_udp, &fd_tcp, peer_port, peer_addr) == ERROR) {
+		perror(NULL);
+		freeList(photos_list);
+		return 1;
+	}
+
+	// Obtem PEER_ID
+	if (serializeInteger(fd_udp, gateway_sockaddr, MSG_GATEWAY_NEW_PEER_ID) == ERROR ||
+	    deserializeInteger(fd_udp, &PEER_ID) == ERROR){
+
+		printf("Can't connect to gateway\n");
+		close(fd_udp);
+		close(fd_tcp);
+		perror(NULL);
+		return 1;
+	}
+	printf("Got id %d\n", PEER_ID);
+
+	// Inicializa o vetor de photo_lists (com as fotos de outros peers já no sistema)
+	if (downloadPeersData(argv[1], gateway_client_port) == ERROR) {
+		close(fd_udp);
+		close(fd_tcp);
+		perror(NULL);
+		return 1;
+	}
+
+	// Regista peer na gateway e obtem o seu ID
+	if (registerAtGateway(fd_udp, gateway_sockaddr, peer_port, peer_addr) == ERROR) {
+		close(fd_udp);
+		close(fd_tcp);
+		freeList(photos_list);
+		printf("Error trying to regist peer at gateway\n");
+		return ERROR;
+	}
+	printf("Peer registed with id %d\n", PEER_ID);
 
 	setInterruptionHandler();
 
@@ -245,7 +296,9 @@ int main(int argc, char *argv[]){
 	pthread_join(gateway_thread, NULL);
 
 	printf("Informando gateway do término deste peer...\n");
-	unregisterAtGateway(fd_udp, gateway_addr, PEER_ID);
+	unregisterAtGateway(fd_udp, gateway_sockaddr, PEER_ID);
+
+	freeList(photos_list);
 
 	// Fecha Sockets
 	close(fd_udp);
