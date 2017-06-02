@@ -1,5 +1,5 @@
 #include <stdlib.h>
-
+#include <pthread.h>
 #include "headed_list.h"
 
 struct list_node{
@@ -15,6 +15,16 @@ struct list_head{
     ListNode * current_node;
 };
 
+// -----
+int pthread_mutex_init(pthread_mutex_t *mux , const pthread_mutexattr_t *PTHREAD_MUTEX_RECURSIVE);
+if (pthread_mutex_lock(pthread_mutex_t *mux) == EQUAL)
+{
+	
+	/*Região Critica*/
+	pthread_mutex_unlock(pthread_mutex_t *mux);
+}
+//------
+
 static int defaultCompareItemWithId(void * a, void * b){return GREATER;}
 static void defaultFreeItem(void * item){}
 
@@ -28,12 +38,12 @@ List * newList(int (*compareItemWithId)(void *, void *), void (*freeItem) (void 
 
   new_list->compareItemWithId = compareItemWithId == NULL ? defaultCompareItemWithId : compareItemWithId;
   new_list->freeItem = freeItem == NULL ? defaultFreeItem : freeItem;
-
+  
   return new_list;
 }
 
 static void freeListNodes(ListNode * list_node, void (*freeItem)(void *)){
-  if (list_node != NULL){
+  if (list_node != NULL){ 
     freeListNodes(list_node->next, freeItem);
     freeItem(list_node->item);
     free(list_node);
@@ -50,15 +60,16 @@ void freeList(List * list){
 void insertListItem(List * list, void * item, void * item_id){
   ListNode * new_list_node;
 
-  new_list_node = (ListNode *) malloc(sizeof(ListNode));
-  new_list_node->item = item;
+  new_list_node = (ListNode *) malloc(sizeof(ListNode)); 
+  new_list_node->item = item; 
+
 
   list->n_elements ++;
 
   // Verifica se deve introduzir no inicio da lista
   if(list->first_node == NULL || list->compareItemWithId(list->first_node, item_id) != SMALLER){
-    // mutex aqui
-    new_list_node->next = list->first_node;
+    // mutex aqui --- //block
+    new_list_node->next = list->first_node;//unblock
     list->first_node = new_list_node;
     return;
   }
@@ -69,9 +80,9 @@ void insertListItem(List * list, void * item, void * item_id){
     prev = aux;
     aux = aux->next;
   } while(aux != NULL && list->compareItemWithId(aux->item, item_id) == SMALLER);
-
+//block
   new_list_node->next = aux;
-  prev->next = new_list_node;
+  prev->next = new_list_node;//unblock
 }
 
 // Estas funções devolvem NULL se for usada a função defaultCompareItems
@@ -85,11 +96,11 @@ void * removeListItem(List * list, void * id){
   if (aux != NULL && list->compareItemWithId(aux->item, id) == EQUAL){
     item = aux->item;
 
-    // mutex aqui
+    // mutex aqui --- //block
     list->n_elements --;
     list->first_node = aux->next;
     free(aux);
-
+//unblock
     // O utilizador é responsavel pelo free do item
     return item;
   }
@@ -102,10 +113,11 @@ void * removeListItem(List * list, void * id){
   if (comparsion == EQUAL){
     item = aux->item;
 
-    // mutex aqui
+    // mutex aqui -- // //block
     list->n_elements --;
     prev->next = aux->next;
     free(aux);
+    //unblock
 
     // O utilizador é responsavel pelo free do item
     return item;
