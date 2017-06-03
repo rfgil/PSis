@@ -17,7 +17,7 @@
 
 #define MAX_QUEUED_CONNECTIONS 128
 
-#define TIMEOUT -1 //-1 //segundos
+#define TIMEOUT 2 //segundos
 
 #define PEER_FOLDER_PREFIX "peer"
 
