@@ -9,7 +9,6 @@
 #include <signal.h>
 #include <pthread.h>
 
-
 #include "global.h"
 #include "Estruturas/headed_list.h"
 #include "serializer.h"
@@ -231,8 +230,6 @@ void handlePeersTCP(int fd){
 
 		close(new_fd);
 	}
-
-	close(fd);
 }
 
 int main(int argc, char *argv[]){
@@ -249,10 +246,10 @@ int main(int argc, char *argv[]){
 	if (fd_clients == ERROR) {perror(NULL); return 1;}
 
 	fd_peers_udp = getBindedUDPSocket(htons(atoi(argv[3])), gateway_addr);
-	if (fd_peers_udp == ERROR) {perror(NULL); return 1;}
+	if (fd_peers_udp == ERROR) {close(fd_clients); perror(NULL); return 1;}
 
 	fd_peers_tcp = getBindedTCPSocket(htons(atoi(argv[3])), gateway_addr);
-	if (fd_peers_tcp == ERROR) {perror(NULL); return 1;}
+	if (fd_peers_tcp == ERROR) {close(fd_clients); close(fd_peers_udp); perror(NULL); return 1;}
 
 	setInterruptionHandler();
 
@@ -270,6 +267,10 @@ int main(int argc, char *argv[]){
 
 	pthread_join(clients_thread, NULL);
 	pthread_join(peers_thread, NULL);
+
+	close(fd_clients);
+	close(fd_peers_udp);
+	close(fd_peers_tcp);
 
 	freeList(peer_list);
 }

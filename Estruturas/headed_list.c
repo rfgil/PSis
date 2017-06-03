@@ -56,7 +56,6 @@ void freeList(List * list){
   }
 }
 
-
 void insertListItem(List * list, void * item, void * item_id){
   ListNode * new_list_node;
 
@@ -67,7 +66,7 @@ void insertListItem(List * list, void * item, void * item_id){
   list->n_elements ++;
 
   // Verifica se deve introduzir no inicio da lista
-  if(list->first_node == NULL || list->compareItemWithId(list->first_node, item_id) != SMALLER){
+  if(list->first_node == NULL || list->compareItemWithId(list->first_node, item_id) != GREATER){
     // mutex aqui --- //block
     new_list_node->next = list->first_node;//unblock
     list->first_node = new_list_node;
@@ -80,6 +79,7 @@ void insertListItem(List * list, void * item, void * item_id){
     prev = aux;
     aux = aux->next;
   } while(aux != NULL && list->compareItemWithId(aux->item, item_id) == SMALLER);
+
   //block
   new_list_node->next = aux;
   prev->next = new_list_node; //unblock

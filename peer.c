@@ -94,7 +94,7 @@ void * handleClient(void * item){
 	printf("Nova ligação\n");
 
 	// O servidor fica indefinadmente à espera de interação por parte do cliente
-	while(myRead(fd, &msg_id, sizeof(int)) == TRUE && check != ERROR){
+	while(check != ERROR && myRead(fd, &msg_id, sizeof(int)) == TRUE){
 		switch (msg_id) {
 			case MSG_NEW_PHOTO:
 				printf("Pedido para adicionar foto...\n");
@@ -128,36 +128,42 @@ void * handleClient(void * item){
 
 			case MSG_REPLICA_NEW_PHOTO:
 				printf("Adicionando foto replicada...\n");
-				handle_replica_new_photo(fd, photos_list);
+				check = handle_replica_new_photo(fd, photos_list);
 				break;
 
 			case MSG_REPLICA_ADD_KEYWORD:
 				printf("Adicionando keyword replicada...\n");
-				handle_replica_add_keyword(fd, photos_list);
+				check = handle_replica_add_keyword(fd, photos_list);
 				break;
 
 			case MSG_REPLICA_DELETE_PHOTO:
 				printf("Replicando removoção de foto...\n");
-				handle_replica_delete_photo(fd, photos_list);
+				check = handle_replica_delete_photo(fd, photos_list);
 				break;
 
 
 			case MSG_REPLICA_ALL:
 				printf("Pedido para replicar informação...\n");
-				sendPhotoList(fd, photos_list);
+				check = sendPhotoList(fd, photos_list);
 				break;
 
 			default: // Invalid message id -> termina a comunicação
 				printf("Mensagem com ID desconhecido...\n");
 				break;
 		}
+
+		if (check == ERROR) {
+			printf("oi\n");
+		}
 	}
 
 	// Fecha a socket
 	close(fd);
+
+	if (check == ERROR) {printf("Ocorreu um erro!\n"); perror(NULL);}
 	printf("Ligação terminada!\n");
 
-	if (check == ERROR) perror(NULL);
+
 
 	if(!isInterrupted){
 		// Caso não tenha ocorrido uma interrupção, remove o thread da lista

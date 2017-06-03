@@ -18,7 +18,6 @@ typedef struct photo{
 	List * keywords;
 } Photo;
 
-
 static char * getFileExtension(char * buffer){
 	int i;
 
@@ -81,9 +80,8 @@ int comparePhotoWithPhotoId(void * a, void * id){
 
 int compareChar(void * a, void * b){
   int res = strcmp((char *)a, (char *)b);
-
-  if (res == 0) return EQUAL;
-  return res > 0 ? GREATER : SMALLER;
+	return res == 0 ? EQUAL : SMALLER;
+	// Retornar sempre smaller obriga a que a lista seja percorrida até ao final
 }
 
 // Registo na gateway
@@ -102,7 +100,6 @@ int registerAtGateway(int fd, struct sockaddr_in gateway_addr, in_port_t peer_po
 int unregisterAtGateway(int fd, struct sockaddr_in gateway_addr, int peer_id){
 	return serializePeerDeath(fd, gateway_addr, peer_id);
 }
-
 
 // Funções para leitura da socket
 static int sendNewPhoto(int fd, Photo * photo){ //STATIC
@@ -172,6 +169,8 @@ static char * receiveKeyword(int fd){
 
 	TCPRead(fd, buffer, size*sizeof(char), TIMEOUT);
 
+	printf("keyword recebida: '%s'\n", buffer);
+
 	return buffer;
 }
 
@@ -183,7 +182,6 @@ static uint32_t receivePhotoId(int fd){
 	TCPRead(fd, &photo_id, sizeof(uint32_t), TIMEOUT);
 	return photo_id;
 }
-
 
 int sendPhotoList(int fd, List * photos_list){
 	Photo * photo;
@@ -254,11 +252,11 @@ int receivePhotoList(int fd, List ** photo_list){
 	// Logo só é necessário alocar a lista de fotos
 	if (fd == FALSE) return TRUE;
 
+	// Pede ao peer para enviar toda a informação replicada
 	msg_id = MSG_REPLICA_ALL;
 	send(fd, &msg_id, sizeof(int), 0);
 
 	if ( TCPRead(fd, &n_photos, sizeof(int), TIMEOUT) == ERROR) return ERROR;
-
 	printf("Receiving %d images from existing peer...\n", n_photos);
 
 	for (i = 0; i<n_photos; i++){
@@ -315,6 +313,8 @@ static int peer_identify_photo(int fd, List * photos_list, Photo ** photo){
   // Recebe id da foto
 	if ((id = receivePhotoId(fd)) == ERROR) return ERROR;
 
+	printf("ID identificado: %d\n", id);
+
   // Procura a foto na lista (e devolve-a por referencia)
   *photo = (Photo *) findListItem(photos_list, &id);
   result = (*photo == NULL) ? FALSE : (*photo)->size;
@@ -360,7 +360,7 @@ static int send_replica(int (*routine) (int, Photo *, char *), Photo * photo, ch
 
 	for(i = 0; i<n_peers; i++){
 		memset(&peer_sockaddr, 0, sizeof(struct sockaddr_in));
-		
+
 		TCPRead(fd_gateway, &peer_sockaddr.sin_port, sizeof(in_port_t), TIMEOUT);
 		TCPRead(fd_gateway, &peer_sockaddr.sin_addr, sizeof(struct in_addr), TIMEOUT);
 		peer_sockaddr.sin_family = AF_INET;
@@ -430,9 +430,8 @@ int handle_add_keyword(int fd, List * photos_list){
 
 	// Obtem foto (e responde ao cliente)
   check = peer_identify_photo(fd, photos_list, &photo);
-  if (check == ERROR) return ERROR;
-	if (check == FALSE) return FALSE;
-
+  if (check == ERROR || check == FALSE) return ERROR;
+	//if (check == FALSE) return FALSE;
 
 	if ((keyword = receiveKeyword(fd)) == NULL) return ERROR;
   insertListItem(photo->keywords, keyword, keyword); // A string é o elemento a armazenar e simultaneamente o id
@@ -578,6 +577,8 @@ int handle_replica_add_keyword(int fd, List * photos_list){
 
 	// Recebe id da foto
 	if ((photo_id = receivePhotoId(fd)) == ERROR) return ERROR;
+
+	printf("Adicionando keyword replicada para a foto %d\n", photo_id);
 
 	// Recebe keyword
 	if ((keyword = receiveKeyword(fd)) == NULL) return ERROR;

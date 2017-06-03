@@ -182,7 +182,7 @@ int gallery_search_photo(int peer_socket, char * keyword, uint32_t ** id_photos)
 
 	// Recebe os vários ids
 	for(i = 0; i<photos_count; i++){
-		check = TCPRead(peer_socket, &(*id_photos[i]), sizeof(uint32_t), TIMEOUT);
+		check = TCPRead(peer_socket, &(*id_photos)[i], sizeof(uint32_t), TIMEOUT);
 		if (check == -1) return ERROR;
 	}
 

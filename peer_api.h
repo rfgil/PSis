@@ -11,9 +11,6 @@
 int PEER_ID;
 struct sockaddr_in GATEWAY_SOCKADDR;
 
-struct in_addr global_gateway_addr;
-in_port_t global_gateway_port;
-
 void freePhoto(void * item);
 int comparePhotoWithPhotoId(void * a, void * b);
 
