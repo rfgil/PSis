@@ -592,6 +592,6 @@ int handle_replica_delete_photo(int fd, List * photos_list){
 
 	if ((photo_id = receivePhotoId(fd)) == ERROR) return ERROR;
 
-	removeListItem(photos_list, &photo_id);
+	freePhoto(removeListItem(photos_list, &photo_id));
 	return TRUE;
 }
